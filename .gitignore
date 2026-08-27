@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# test output
+coverage/
+.playwright-mcp/
+test-results/
+
+# environment and secrets
+.env
+.env.*
+!.env.example
+
+# local artifacts
+.DS_Store
+*.log
+*.pem
+*.key
+*.crt
+
+# editor files
+.idea/
+.vscode/
+
+# TypeScript
+*.tsbuildinfo

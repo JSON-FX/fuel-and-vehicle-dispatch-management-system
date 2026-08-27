@@ -1,0 +1,62 @@
+{
+  "name": "fuel-and-vehicle-dispatch-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:unit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
+    "db:bootstrap": "./scripts/database/run.sh bootstrap",
+    "db:migrate": "./scripts/database/run.sh migrate",
+    "db:rollback": "./scripts/database/run.sh rollback",
+    "db:status": "./scripts/database/run.sh status",
+    "dev:up": "./scripts/dev/up.sh",
+    "dev:down": "./scripts/dev/down.sh",
+    "dev:logs": "./scripts/dev/logs.sh",
+    "validate": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm test:integration && pnpm build"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.3.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "decimal.js": "10.6.0",
+    "kysely": "0.29.5",
+    "lucide-react": "1.34.0",
+    "mysql2": "3.24.2",
+    "next": "16.3.3",
+    "pino": "10.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0",
+    "uuid": "14.0.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@testcontainers/mysql": "12.1.0",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.3",
+    "prettier": "3.9.6",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

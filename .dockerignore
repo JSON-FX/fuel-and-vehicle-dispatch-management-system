@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.next
+.playwright-mcp
+coverage
+design-system
+docs
+node_modules
+test-results
+*.log
+.env*
+*.crt
+*.key

@@ -1,0 +1,56 @@
+name: fvdms
+
+services:
+  app:
+    build:
+      context: .
+      target: development
+    container_name: fvdms
+    restart: unless-stopped
+    environment:
+      FVDMS_CONTAINER: '1'
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_HOST: mysql
+      DATABASE_PORT: '3306'
+      DATABASE_NAME: fvdms
+      DATABASE_USER: fvdms_app
+      DATABASE_PASSWORD: local-fvdms-app-password
+      DATABASE_POOL_MIN: '1'
+      DATABASE_POOL_MAX: '10'
+      DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      DATABASE_QUERY_TIMEOUT_MS: '2000'
+      MIGRATION_DATABASE_USER: fvdms_migrator
+      MIGRATION_DATABASE_PASSWORD: local-fvdms-migrator-password
+      MYSQL_ADMIN_HOST: mysql
+      MYSQL_ADMIN_PORT: '3306'
+      MYSQL_ADMIN_USER: root
+      MYSQL_ADMIN_PASSWORD: ''
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - next-cache:/app/.next
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=dev-net'
+      - 'traefik.http.routers.fvdms.rule=Host(`fvdms.lan`)'
+      - 'traefik.http.routers.fvdms.entrypoints=websecure'
+      - 'traefik.http.routers.fvdms.tls=true'
+      - 'traefik.http.routers.fvdms.service=fvdms'
+      - 'traefik.http.services.fvdms.loadbalancer.server.port=3000'
+    networks:
+      - dev-net
+
+volumes:
+  node-modules:
+  next-cache:
+
+networks:
+  dev-net:
+    external: true
