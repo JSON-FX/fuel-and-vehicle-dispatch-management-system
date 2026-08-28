@@ -4,6 +4,7 @@ import type { DispatchDetailDto } from '@/application/dispatch/dto/dispatch-dtos
 import { CancelDispatchDialog } from '@/components/dispatches/cancel-dispatch-dialog';
 import { CompleteDispatchDialog } from '@/components/dispatches/complete-dispatch-dialog';
 import { DispatchConfirmDialog } from '@/components/dispatches/dispatch-confirm-dialog';
+import { DispatchConflictHistory } from '@/components/dispatches/dispatch-conflict-history';
 import {
   formatDispatchCivilDate,
   formatDispatchDateTime,
@@ -112,6 +113,10 @@ export function DispatchDetail({
                 {dispatch.cancellationReason ?? 'Not applicable'}
               </Details>
             </dl>
+          </DetailCard>
+
+          <DetailCard title="Schedule conflict acknowledgments">
+            <DispatchConflictHistory items={dispatch.conflictAcknowledgments ?? []} />
           </DetailCard>
         </div>
 

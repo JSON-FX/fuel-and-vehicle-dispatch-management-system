@@ -23,8 +23,14 @@ export function DispatchFilterForm({
             Filter vehicle dispatches
           </h2>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Field id="dispatch-query" label="Destination, purpose, driver, vehicle, or office">
-              <Input id="dispatch-query" name="query" defaultValue={values.query} maxLength={150} />
+            <Field id="dispatch-query" label="Search dispatches">
+              <Input
+                id="dispatch-query"
+                name="query"
+                defaultValue={values.query}
+                maxLength={150}
+                placeholder="Destination, purpose, driver, vehicle, or office"
+              />
             </Field>
             <Field id="dispatch-filter-status" label="Status">
               <NativeSelect id="dispatch-filter-status" name="status" defaultValue={values.status}>

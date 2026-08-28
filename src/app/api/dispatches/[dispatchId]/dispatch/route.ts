@@ -2,9 +2,10 @@ import { createApplicationComposition } from '@/infrastructure/composition/root'
 import { assertSecureJsonMutation, parseJsonBody } from '@/lib/auth/route-helpers';
 import {
   authenticateDispatchRequest,
+  authorizeDispatchRequestAccess,
   dispatchRequestContext,
 } from '@/lib/dispatch/server-dispatch-access';
-import { dispatchPublicIdSchema, emptyDispatchBodySchema } from '@/lib/dispatch/route-schemas';
+import { dispatchPublicIdSchema, dispatchVehicleSchema } from '@/lib/dispatch/route-schemas';
 import { withResponseHandler } from '@/lib/http/with-response-handler';
 
 export const runtime = 'nodejs';
@@ -27,10 +28,21 @@ export async function POST(request: Request, route: Context): Promise<Response> 
       csrfTokenHash: authenticated.csrfTokenHash,
       tokenGenerator: composition.secureTokenGenerator,
     });
-    emptyDispatchBodySchema.parse(await parseJsonBody(currentRequest));
+    const command = dispatchVehicleSchema.parse(await parseJsonBody(currentRequest));
+    if (command.conflictOverride !== undefined) {
+      await authorizeDispatchRequestAccess(
+        currentRequest,
+        composition,
+        authenticated.principal,
+        'override',
+        requestId,
+        '/api/dispatches/:dispatchId/dispatch',
+      );
+    }
     return composition.dispatchVehicle.execute({
       context: dispatchRequestContext(currentRequest, authenticated.principal, requestId),
       publicId: dispatchPublicIdSchema.parse((await route.params).dispatchId),
+      command,
     });
   })(request);
 }

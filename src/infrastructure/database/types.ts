@@ -291,6 +291,26 @@ export interface VehicleDispatchesTable {
   updated_at: UpdatedTimestamp;
 }
 
+export interface DispatchScheduleSettingsTable {
+  id: number;
+  policy: 'BLOCK' | 'WARN_AND_ACK';
+  updated_by_user_id: string | null;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface VehicleDispatchConflictOverridesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  dispatch_id: string;
+  conflicting_dispatch_id: string;
+  conflict_type: 'DRIVER' | 'VEHICLE' | 'DRIVER_AND_VEHICLE';
+  policy: 'BLOCK' | 'WARN_AND_ACK';
+  acknowledged_by_user_id: string;
+  acknowledgement_reason: string;
+  acknowledged_at: CreatedTimestamp;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -314,6 +334,8 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   fuel_issuances: FuelIssuancesTable;
   fuel_ledger_entries: FuelLedgerEntriesTable;
   vehicle_dispatches: VehicleDispatchesTable;
+  dispatch_schedule_settings: DispatchScheduleSettingsTable;
+  vehicle_dispatch_conflict_overrides: VehicleDispatchConflictOverridesTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

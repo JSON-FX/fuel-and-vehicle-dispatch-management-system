@@ -12,7 +12,12 @@ import {
   dispatchDetails,
   normalizeCancellationReason,
 } from '@/application/dispatch/services/dispatch-use-case-support';
-import { BusinessRuleError, ValidationError } from '@/application/shared/errors/application-error';
+import {
+  BusinessRuleError,
+  DispatchScheduleConflictError,
+  DispatchTransactionRetryError,
+  ValidationError,
+} from '@/application/shared/errors/application-error';
 import { VehicleDispatch } from '@/domain/dispatch/entities/vehicle-dispatch';
 import { DispatchDate } from '@/domain/dispatch/value-objects/dispatch-date';
 import { OdometerReading } from '@/domain/dispatch/value-objects/odometer-reading';
@@ -61,6 +66,8 @@ describe('dispatch application services', () => {
     expect(policy.canUpdate(principal(['dispatch.update']))).toBe(true);
     expect(policy.canComplete(principal(['dispatch.complete']))).toBe(true);
     expect(policy.canCancel(principal(['dispatch.cancel']))).toBe(true);
+    expect(policy.canOverrideConflict(principal(['dispatch.conflict.override']))).toBe(true);
+    expect(policy.canManageSettings(principal(['dispatch.settings.manage']))).toBe(true);
     expect(policy.canRead(principal(['dispatch.create']))).toBe(false);
     expect(policy.canComplete(principal(['dispatch.update']))).toBe(false);
     expect(() => policy.assertCanCreate(principal([]))).toThrow('not allowed');
@@ -68,6 +75,25 @@ describe('dispatch application services', () => {
     expect(() => policy.assertCanUpdate(principal([]), draft())).toThrow('not allowed');
     expect(() => policy.assertCanComplete(principal([]), draft())).toThrow('not allowed');
     expect(() => policy.assertCanCancel(principal([]), draft())).toThrow('not allowed');
+    expect(() => policy.assertCanOverrideConflict(principal([]))).toThrow('not allowed');
+    expect(() => policy.assertCanManageSettings(principal([]))).toThrow('not allowed');
+  });
+
+  it('exposes safe structured schedule conflicts and retry outcomes', () => {
+    const context = {
+      policy: 'WARN_AND_ACK' as const,
+      canOverride: true,
+      fingerprint: 'a'.repeat(64),
+      conflicts: [],
+    };
+    const conflict = new DispatchScheduleConflictError(context);
+    const retry = new DispatchTransactionRetryError();
+
+    expect(conflict.code).toBe('DISPATCH_SCHEDULE_CONFLICT');
+    expect(conflict.httpStatus).toBe(409);
+    expect(conflict.context).toEqual(context);
+    expect(retry.code).toBe('DISPATCH_TRANSACTION_RETRY_REQUIRED');
+    expect(retry.httpStatus).toBe(409);
   });
 
   it('normalizes dispatch details and maps value failures to field errors', () => {

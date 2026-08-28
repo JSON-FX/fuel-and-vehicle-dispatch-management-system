@@ -7,7 +7,10 @@ import { useState, type FormEvent } from 'react';
 import type {
   DispatchDetailDto,
   DispatchPreparationOptionsDto,
+  DispatchScheduleConflictContextDto,
 } from '@/application/dispatch/dto/dispatch-dtos';
+import { DispatchAvailabilityGuidance } from '@/components/dispatches/dispatch-availability-guidance';
+import { DispatchConflictDialog } from '@/components/dispatches/dispatch-conflict-dialog';
 import { FormStatus } from '@/components/forms/form-status';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +48,9 @@ export function DispatchDraftForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [requestError, setRequestError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [conflictContext, setConflictContext] = useState<DispatchScheduleConflictContextDto | null>(
+    null,
+  );
 
   function set<K extends keyof Values>(key: K, value: Values[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -70,6 +76,10 @@ export function DispatchDraftForm({
       return;
     }
 
+    await save(parsed.data);
+  }
+
+  async function save(command: ReturnType<typeof createDispatchSchema.parse>) {
     setSubmitting(true);
     try {
       const response = await fetch(
@@ -77,7 +87,7 @@ export function DispatchDraftForm({
         {
           method: dispatch === undefined ? 'POST' : 'PATCH',
           headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken },
-          body: JSON.stringify(parsed.data),
+          body: JSON.stringify(command),
         },
       );
       const saved = await readDispatchApiResponse<DispatchDetailDto>(response);
@@ -85,6 +95,10 @@ export function DispatchDraftForm({
       else router.replace(`/dispatches/${saved.publicId}`);
     } catch (error) {
       if (error instanceof DispatchApiError) {
+        if (error.conflictContext !== null) {
+          setConflictContext(error.conflictContext);
+          return;
+        }
         setFieldErrors({ ...error.fieldErrors });
         focusDispatchField(Object.keys(error.fieldErrors)[0]);
       }
@@ -164,6 +178,13 @@ export function DispatchDraftForm({
           </Field>
         </div>
       </Section>
+
+      <DispatchAvailabilityGuidance
+        travelDate={values.travelDate}
+        driverPublicId={values.driverPublicId}
+        vehiclePublicId={values.vehiclePublicId}
+        excludedDispatchPublicId={dispatch?.publicId}
+      />
 
       <Section
         title="Travel details"
@@ -264,6 +285,24 @@ export function DispatchDraftForm({
           {submitting ? 'Saving…' : dispatch === undefined ? 'Save draft' : 'Save draft changes'}
         </Button>
       </div>
+      <DispatchConflictDialog
+        open={conflictContext !== null}
+        context={conflictContext}
+        pending={submitting}
+        onOpenChange={(open) => {
+          if (!open) setConflictContext(null);
+        }}
+        onConfirm={(reason, fingerprint) => {
+          const parsed = createDispatchSchema.safeParse({
+            ...values,
+            passengerCount: /^\d+$/.test(values.passengerCount)
+              ? Number(values.passengerCount)
+              : values.passengerCount,
+            conflictOverride: { acknowledged: true, reason, fingerprint },
+          });
+          if (parsed.success) void save(parsed.data);
+        }}
+      />
     </form>
   );
 }

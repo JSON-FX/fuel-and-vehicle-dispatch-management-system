@@ -3,6 +3,16 @@ export interface ErrorDetail {
   readonly reason: string;
 }
 
+export type ApplicationErrorContextValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ApplicationErrorContextValue[]
+  | { readonly [key: string]: ApplicationErrorContextValue };
+
+export type ApplicationErrorContext = Readonly<Record<string, ApplicationErrorContextValue>>;
+
 export abstract class ApplicationError extends Error {
   protected constructor(
     public readonly code: string,
@@ -10,6 +20,7 @@ export abstract class ApplicationError extends Error {
     public readonly httpStatus: number,
     public readonly details: readonly ErrorDetail[] = [],
     cause?: unknown,
+    public readonly context?: ApplicationErrorContext,
   ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = new.target.name;
@@ -76,6 +87,29 @@ export class ConflictError extends ApplicationError {
     details: readonly ErrorDetail[] = [],
   ) {
     super('CONFLICT', message, 409, details);
+  }
+}
+
+export class DispatchScheduleConflictError extends ApplicationError {
+  constructor(context: ApplicationErrorContext) {
+    super(
+      'DISPATCH_SCHEDULE_CONFLICT',
+      'The selected driver or vehicle is already scheduled.',
+      409,
+      [],
+      undefined,
+      context,
+    );
+  }
+}
+
+export class DispatchTransactionRetryError extends ApplicationError {
+  constructor() {
+    super(
+      'DISPATCH_TRANSACTION_RETRY_REQUIRED',
+      'The dispatch schedule changed during this request. Review the latest schedule and try again.',
+      409,
+    );
   }
 }
 

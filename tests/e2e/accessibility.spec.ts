@@ -223,6 +223,19 @@ test('dispatch pages and lifecycle dialogs remain accessible in every supported 
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/dispatches');
     expect(await hasNoPageOverflow(page)).toBe(true);
+    await expect(page.getByLabel('Search dispatches')).toBeVisible();
+    if (width === 1440) {
+      const searchBox = await page.getByLabel('Search dispatches').boundingBox();
+      const statusBox = await page.getByLabel('Status').boundingBox();
+      expect(searchBox?.y).toBe(statusBox?.y);
+      expect(searchBox?.height).toBe(statusBox?.height);
+    }
+    await page.goto(
+      `/dispatches/schedule?view=${width === 768 ? 'week' : 'month'}&date=2026-08-29`,
+    );
+    await expect(page.getByRole('heading', { name: 'Dispatch schedule' })).toBeVisible();
+    expect(await hasNoPageOverflow(page)).toBe(true);
+    expect((await wcagAxe(page).analyze()).violations).toEqual([]);
   }
   await page.getByRole('button', { name: 'Collapse sidebar' }).click();
   await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();

@@ -22,6 +22,7 @@ export function DispatchResults({ items }: { readonly items: readonly DispatchDe
   return (
     <ResponsiveReferenceResults
       label="Vehicle dispatch results"
+      desktopBreakpoint="lg"
       table={
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-card">

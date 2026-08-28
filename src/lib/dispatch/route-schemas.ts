@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import type { DispatchListQuery } from '@/application/dispatch/dto/dispatch-dtos';
+import type {
+  DispatchListQuery,
+  DispatchScheduleCandidateDto,
+  DispatchScheduleQuery,
+} from '@/application/dispatch/dto/dispatch-dtos';
 import { ValidationError } from '@/application/shared/errors/application-error';
 
 const normalizedText = (minimum: number, maximum: number) =>
@@ -42,6 +46,14 @@ const odometerSchema = z
     'Provide a nonnegative odometer reading with up to one decimal place.',
   );
 
+const conflictOverrideSchema = z
+  .object({
+    acknowledged: z.literal(true),
+    reason: normalizedText(10, 500),
+    fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
 export const dispatchPublicIdSchema = z
   .string()
   .uuid()
@@ -59,11 +71,65 @@ const dispatchFields = {
   passengerCount: z.number().int().min(0).max(4_294_967_295),
 };
 
-export const createDispatchSchema = z.object(dispatchFields).strict();
-export const updateDispatchSchema = z.object(dispatchFields).strict();
+export const createDispatchSchema = z
+  .object({ ...dispatchFields, conflictOverride: conflictOverrideSchema.optional() })
+  .strict();
+export const updateDispatchSchema = z
+  .object({ ...dispatchFields, conflictOverride: conflictOverrideSchema.optional() })
+  .strict();
 export const emptyDispatchBodySchema = z.object({}).strict();
+export const dispatchVehicleSchema = z
+  .object({ conflictOverride: conflictOverrideSchema.optional() })
+  .strict();
 export const completeDispatchSchema = z.object({ odoAfter: odometerSchema }).strict();
 export const cancelDispatchSchema = z.object({ reason: normalizedText(10, 500) }).strict();
+export const updateDispatchScheduleSettingsSchema = z
+  .object({ policy: z.enum(['BLOCK', 'WARN_AND_ACK']) })
+  .strict();
+
+const optionalPublicIdSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  dispatchPublicIdSchema.optional(),
+);
+const dispatchConflictQuerySchema = z
+  .object({
+    travelDate: civilDateSchema,
+    driverPublicId: dispatchPublicIdSchema,
+    vehiclePublicId: dispatchPublicIdSchema,
+    excludedDispatchPublicId: optionalPublicIdSchema,
+  })
+  .strict();
+const dispatchScheduleQuerySchema = z
+  .object({
+    from: civilDateSchema,
+    to: civilDateSchema,
+    requestingOfficePublicId: optionalPublicIdSchema,
+    driverPublicId: optionalPublicIdSchema,
+    vehiclePublicId: optionalPublicIdSchema,
+    status: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['DRAFT', 'DISPATCHED', 'COMPLETED', 'CANCELLED']).optional(),
+    ),
+    limit: z.coerce.number().int().min(1).max(200).default(200),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.from > value.to) {
+      context.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: 'End date must be on or after the start date.',
+      });
+      return;
+    }
+    if (inclusiveCivilDateCount(value.from, value.to) > 42) {
+      context.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: 'Schedule ranges may include at most 42 calendar days.',
+      });
+    }
+  });
 
 const dispatchListSchema = z
   .object({
@@ -107,6 +173,31 @@ export function parseDispatchListQuery(input: unknown): DispatchListQuery {
   };
 }
 
+export function parseDispatchConflictQuery(input: unknown): DispatchScheduleCandidateDto {
+  const parsed = dispatchConflictQuerySchema.safeParse(input);
+  if (!parsed.success) throwValidation(parsed.error);
+  return {
+    travelDate: parsed.data.travelDate,
+    driverPublicId: parsed.data.driverPublicId,
+    vehiclePublicId: parsed.data.vehiclePublicId,
+    excludedDispatchPublicId: parsed.data.excludedDispatchPublicId ?? null,
+  };
+}
+
+export function parseDispatchScheduleQuery(input: unknown): DispatchScheduleQuery {
+  const parsed = dispatchScheduleQuerySchema.safeParse(input);
+  if (!parsed.success) throwValidation(parsed.error);
+  return {
+    from: parsed.data.from,
+    to: parsed.data.to,
+    requestingOfficePublicId: parsed.data.requestingOfficePublicId ?? null,
+    driverPublicId: parsed.data.driverPublicId ?? null,
+    vehiclePublicId: parsed.data.vehiclePublicId ?? null,
+    status: parsed.data.status ?? null,
+    limit: parsed.data.limit,
+  };
+}
+
 export function dispatchSearchParams(searchParams: URLSearchParams): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const key of new Set(searchParams.keys())) {
@@ -122,5 +213,16 @@ function throwValidation(error: z.ZodError): never {
       ...(issue.path.length === 0 ? {} : { field: String(issue.path[0]) }),
       reason: issue.message,
     })),
+  );
+}
+
+function inclusiveCivilDateCount(from: string, to: string): number {
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number) as [number, number, number];
+  const [toYear, toMonth, toDay] = to.split('-').map(Number) as [number, number, number];
+  return (
+    Math.floor(
+      (Date.UTC(toYear, toMonth - 1, toDay) - Date.UTC(fromYear, fromMonth - 1, fromDay)) /
+        86_400_000,
+    ) + 1
   );
 }

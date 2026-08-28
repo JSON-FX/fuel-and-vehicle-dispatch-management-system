@@ -92,10 +92,20 @@ export async function prepareFuelDatabase(database: Kysely<Database>): Promise<v
 
 export async function resetFuelDatabase(database: Kysely<Database>): Promise<void> {
   await database.withSchema('fvdms_audit').deleteFrom('audit_outbox').execute();
+  await database.deleteFrom('vehicle_dispatch_conflict_overrides').execute();
   await database.deleteFrom('vehicle_dispatches').execute();
   await database.deleteFrom('fuel_ledger_entries').execute();
   await database.deleteFrom('fuel_issuances').execute();
   await database.deleteFrom('fuel_sequence_monthly').execute();
+  await database
+    .updateTable('dispatch_schedule_settings')
+    .set({
+      policy: 'WARN_AND_ACK',
+      updated_by_user_id: null,
+      updated_at: new Date('2026-08-29T00:00:00.000Z'),
+    })
+    .where('id', '=', 1)
+    .execute();
   await database.deleteFrom('budget_allocations').execute();
   await database.deleteFrom('vehicles').execute();
   await database.deleteFrom('drivers').execute();

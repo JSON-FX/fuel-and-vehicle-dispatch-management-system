@@ -1,8 +1,12 @@
 FROM node:24.19.0-alpine AS development
 
+ENV COREPACK_HOME=/opt/corepack
+
 RUN apk add --no-cache curl \
+  && mkdir -p "$COREPACK_HOME" \
   && corepack enable \
-  && corepack prepare pnpm@11.24.0 --activate
+  && corepack prepare pnpm@11.24.0 --activate \
+  && chown -R node:node "$COREPACK_HOME"
 
 WORKDIR /app
 

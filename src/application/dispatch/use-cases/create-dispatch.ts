@@ -9,6 +9,7 @@ import {
   buildDispatchAuditEvent,
   dispatchAuditSnapshot,
 } from '@/application/dispatch/services/dispatch-audit-events';
+import { DispatchConflictResolutionService } from '@/application/dispatch/services/dispatch-conflict-resolution';
 import {
   assertOperationalDriver,
   assertOperationalOffice,
@@ -59,7 +60,33 @@ export class CreateDispatch {
       if (vehicle === null) throw new NotFoundError();
       assertOperationalVehicle(vehicle);
 
+      const scheduleSettings = await repositories.dispatchScheduleSettings.getForShare();
+      const candidate = {
+        travelDate: dispatch.travelDate.toString(),
+        driverPublicId: dispatch.driverPublicId.toString(),
+        vehiclePublicId: dispatch.vehiclePublicId.toString(),
+        excludedDispatchPublicId: null,
+      };
+      const conflicts =
+        await repositories.dispatchSchedules.findCurrentConflictsForShare(candidate);
+      const resolution = await new DispatchConflictResolutionService({
+        permissions: this.dependencies.permissions,
+        fingerprints: this.dependencies.conflictFingerprints,
+        publicIds: this.dependencies.publicIds,
+      }).resolve({
+        context: input.context,
+        candidate,
+        settings: scheduleSettings,
+        conflicts,
+        command: input.command.conflictOverride,
+        dispatchPublicId: dispatch.publicId.toString(),
+        allowExistingEvidence: false,
+        overrides: repositories.dispatchConflictOverrides,
+        at,
+      });
+
       await repositories.dispatches.insert(dispatch);
+      await repositories.dispatchConflictOverrides.appendMany(resolution.overrideRows);
       await repositories.auditEvents.append(
         buildDispatchAuditEvent({
           publicId: this.dependencies.publicIds.generate().toString(),
@@ -73,6 +100,9 @@ export class CreateDispatch {
           after: dispatchAuditSnapshot(dispatch),
         }),
       );
+      if (resolution.auditEvent !== null) {
+        await repositories.auditEvents.append(resolution.auditEvent);
+      }
 
       return toDispatchDetailDto({
         dispatch,

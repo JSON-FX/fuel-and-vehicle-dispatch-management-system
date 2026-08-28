@@ -46,6 +46,30 @@ describe('dispatch form response', () => {
     ).rejects.toThrow('The request could not be completed.');
   });
 
+  it('preserves allowlisted dispatch conflict context for authoritative review', async () => {
+    const context = {
+      policy: 'WARN_AND_ACK',
+      canOverride: true,
+      fingerprint: 'a'.repeat(64),
+      conflicts: [],
+    } as const;
+    const error = await readDispatchApiResponse(
+      Response.json(
+        {
+          success: false,
+          error: {
+            code: 'DISPATCH_SCHEDULE_CONFLICT',
+            message: 'The selected driver or vehicle is already scheduled.',
+            context,
+          },
+        },
+        { status: 409 },
+      ),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'DISPATCH_SCHEDULE_CONFLICT', conflictContext: context });
+  });
+
   it('rotates and returns fresh CSRF material before a lifecycle mutation', async () => {
     const fetch = vi
       .fn()

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { createDispatchWebComposition } from '@/infrastructure/composition/dispatch';
+import { KyselyDispatchTransaction } from '@/infrastructure/database/dispatch/kysely-dispatch-transaction';
 import type { Database } from '@/infrastructure/database/types';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
 
@@ -22,6 +23,7 @@ describe('dispatch composition', () => {
     expect(composition.dispatchDependencies.transaction.execute).toBeTypeOf('function');
     expect(composition.dispatchDependencies.clock).toBe(clock);
     expect(composition.dispatchDependencies.publicIds).toBe(publicIds);
+    expect(composition.dispatchDependencies.conflictFingerprints?.create).toBeTypeOf('function');
     expect(
       [
         composition.createDispatch,
@@ -35,4 +37,21 @@ describe('dispatch composition', () => {
       ].every((service) => typeof service.execute === 'function'),
     ).toBe(true);
   });
+
+  it.each(['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'])(
+    'maps MySQL %s after transaction rollback to a recoverable conflict',
+    async (code) => {
+      const database = {
+        transaction: () => ({
+          execute: async () => Promise.reject({ code }),
+        }),
+      } as unknown as import('kysely').Kysely<Database>;
+      const transaction = new KyselyDispatchTransaction(database);
+
+      await expect(transaction.execute(async () => undefined)).rejects.toMatchObject({
+        code: 'DISPATCH_TRANSACTION_RETRY_REQUIRED',
+        httpStatus: 409,
+      });
+    },
+  );
 });
