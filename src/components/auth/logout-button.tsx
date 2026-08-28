@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button';
 
 import { readApiResponse } from '../forms/auth-form-utils';
 
-export function LogoutButton() {
+export function LogoutButton({ iconOnly = false }: { readonly iconOnly?: boolean }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const label = pending ? 'Signing out…' : 'Sign out';
 
   async function logout() {
     setPending(true);
@@ -31,9 +32,17 @@ export function LogoutButton() {
   }
 
   return (
-    <Button type="button" variant="outline" onClick={logout} disabled={pending}>
+    <Button
+      type="button"
+      variant="outline"
+      size={iconOnly ? 'icon' : 'default'}
+      aria-label={label}
+      title={iconOnly ? label : undefined}
+      onClick={logout}
+      disabled={pending}
+    >
       <LogOut aria-hidden="true" />
-      {pending ? 'Signing out…' : 'Sign out'}
+      <span className={iconOnly ? 'sr-only' : undefined}>{label}</span>
     </Button>
   );
 }

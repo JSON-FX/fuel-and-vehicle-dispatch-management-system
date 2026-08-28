@@ -25,6 +25,8 @@ export interface VehicleOperationalOptionDto {
   readonly publicId: string;
   readonly label: string;
   readonly plateNumber: string;
+  readonly modelBrand: string;
+  readonly vehicleType: string;
 }
 
 export interface CreateVehicleCommand {

@@ -25,6 +25,7 @@ test.describe.serial('master-data management', () => {
     page,
   }) => {
     await login(page, credentials.manager);
+    await page.getByText('Master data', { exact: true }).click();
     await expect(page.getByRole('link', { name: 'Offices' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Drivers' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Vehicles' })).toBeVisible();

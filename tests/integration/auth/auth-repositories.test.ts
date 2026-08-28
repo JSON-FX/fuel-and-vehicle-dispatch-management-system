@@ -23,6 +23,13 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`delete from fvdms_audit.audit_outbox`.execute(database);
+  await sql`delete from fuel_ledger_entries`.execute(database);
+  await sql`delete from fuel_issuances`.execute(database);
+  await sql`delete from fuel_sequence_monthly`.execute(database);
+  await sql`delete from budget_allocations`.execute(database);
+  await sql`delete from vehicles`.execute(database);
+  await sql`delete from drivers`.execute(database);
+  await sql`delete from offices`.execute(database);
   await sql`update authentication_settings
     set mfa_required = false, updated_by_user_id = null, updated_at = '2026-08-28 00:00:00.000000'`.execute(
     database,

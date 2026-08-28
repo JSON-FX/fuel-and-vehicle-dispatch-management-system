@@ -20,6 +20,13 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`delete from fvdms_audit.audit_outbox`.execute(database);
+  await sql`delete from fuel_ledger_entries`.execute(database);
+  await sql`delete from fuel_issuances`.execute(database);
+  await sql`delete from fuel_sequence_monthly`.execute(database);
+  await sql`delete from budget_allocations`.execute(database);
+  await sql`delete from vehicles`.execute(database);
+  await sql`delete from drivers`.execute(database);
+  await sql`delete from offices`.execute(database);
   await sql`delete from user_roles`.execute(database);
   await sql`delete from users`.execute(database);
   useCase = new CreateInitialSuperAdmin({
