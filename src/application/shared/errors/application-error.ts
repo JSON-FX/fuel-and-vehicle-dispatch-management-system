@@ -28,6 +28,36 @@ export class AuthenticationError extends ApplicationError {
   }
 }
 
+export class InvalidCredentialsError extends ApplicationError {
+  constructor() {
+    super('INVALID_CREDENTIALS', 'The username or password is invalid.', 401);
+  }
+}
+
+export class RateLimitedError extends ApplicationError {
+  constructor() {
+    super('AUTH_RATE_LIMITED', 'Too many authentication attempts. Try again later.', 429);
+  }
+}
+
+export class SessionExpiredError extends ApplicationError {
+  constructor() {
+    super('SESSION_EXPIRED', 'The session has expired. Sign in again.', 401);
+  }
+}
+
+export class ForcedAuthenticationFlowError extends ApplicationError {
+  constructor(public readonly next: 'PASSWORD_CHANGE' | 'TOTP_ENROLLMENT' | 'TOTP_VERIFICATION') {
+    super('AUTH_FLOW_REQUIRED', 'Complete the required authentication step.', 403);
+  }
+}
+
+export class CsrfError extends ApplicationError {
+  constructor() {
+    super('CSRF_INVALID', 'The request could not be verified.', 403);
+  }
+}
+
 export class AuthorizationError extends ApplicationError {
   constructor() {
     super('FORBIDDEN', 'You are not allowed to perform this action.', 403);

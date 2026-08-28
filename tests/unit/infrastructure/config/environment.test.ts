@@ -19,6 +19,21 @@ const runtimeEnvironment = {
   DATABASE_POOL_MAX: '10',
   DATABASE_CONNECT_TIMEOUT_MS: '5000',
   DATABASE_QUERY_TIMEOUT_MS: '2000',
+  AUTH_ALLOWED_ORIGIN: 'https://fvdms.lan',
+  AUTH_STANDARD_IDLE_TIMEOUT_SECONDS: '1800',
+  AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS: '900',
+  AUTH_ABSOLUTE_TIMEOUT_SECONDS: '28800',
+  AUTH_PRIVILEGED_SESSION_LIMIT: '1',
+  AUTH_RATE_LIMIT_MAX_FAILURES: '5',
+  AUTH_RATE_LIMIT_WINDOW_SECONDS: '900',
+  AUTH_RATE_LIMIT_LOCK_SECONDS: '900',
+  AUTH_CHALLENGE_TTL_SECONDS: '300',
+  AUTH_ACTIVITY_WRITE_INTERVAL_SECONDS: '300',
+  AUTH_PASSWORD_MIN_LENGTH: '12',
+  AUTH_PASSWORD_MAX_LENGTH: '128',
+  AUTH_TOTP_ACTIVE_KEY_VERSION: '1',
+  AUTH_TOTP_ENCRYPTION_KEYS: '{"1":"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="}',
+  AUTH_RATE_LIMIT_HMAC_KEY: 'YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=',
 };
 
 describe('environment parsing', () => {
@@ -37,7 +52,44 @@ describe('environment parsing', () => {
         connectTimeoutMs: 5000,
         queryTimeoutMs: 2000,
       },
+      auth: {
+        allowedOrigin: 'https://fvdms.lan',
+        standardIdleTimeoutSeconds: 1800,
+        privilegedIdleTimeoutSeconds: 900,
+        absoluteTimeoutSeconds: 28800,
+        privilegedSessionLimit: 1,
+        rateLimitMaxFailures: 5,
+        rateLimitWindowSeconds: 900,
+        rateLimitLockSeconds: 900,
+        challengeTtlSeconds: 300,
+        activityWriteIntervalSeconds: 300,
+        passwordMinLength: 12,
+        passwordMaxLength: 128,
+        totpActiveKeyVersion: 1,
+        totpEncryptionKeys: {
+          1: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+        },
+        rateLimitHmacKey: 'YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=',
+      },
     });
+  });
+
+  it('rejects authentication keys that are not exactly 32 bytes', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        AUTH_RATE_LIMIT_HMAC_KEY: Buffer.from('too-short').toString('base64'),
+      }),
+    ).toThrow('AUTH_RATE_LIMIT_HMAC_KEY must decode to exactly 32 bytes.');
+  });
+
+  it('rejects a TOTP key ring without the active key version', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        AUTH_TOTP_ACTIVE_KEY_VERSION: '2',
+      }),
+    ).toThrow('AUTH_TOTP_ENCRYPTION_KEYS must contain active key version 2.');
   });
 
   it('rejects a missing runtime database password', () => {
@@ -60,6 +112,15 @@ describe('environment parsing', () => {
         NEXT_PUBLIC_DATABASE_PASSWORD: 'leaked',
       }),
     ).toThrow();
+  });
+
+  it('rejects TOTP key material exposed through a NEXT_PUBLIC variable', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        NEXT_PUBLIC_AUTH_TOTP_ENCRYPTION_KEYS: runtimeEnvironment.AUTH_TOTP_ENCRYPTION_KEYS,
+      }),
+    ).toThrow('NEXT_PUBLIC_AUTH_TOTP_ENCRYPTION_KEYS must not expose server-only configuration.');
   });
 
   it('parses migration credentials separately from runtime credentials', () => {

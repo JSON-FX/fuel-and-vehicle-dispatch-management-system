@@ -18,9 +18,63 @@ export function proxy(request: NextRequest): NextResponse {
     path: request.nextUrl.pathname,
   });
 
-  const response = NextResponse.next({ request: { headers: forwardedHeaders } });
+  const response = routeRequest(request, forwardedHeaders);
   response.headers.set('x-request-id', requestId);
   return response;
+}
+
+const authenticationPages = new Set([
+  '/login',
+  '/password-change',
+  '/mfa/enroll',
+  '/mfa/challenge',
+]);
+
+const challengePages = new Set(['/password-change', '/mfa/enroll', '/mfa/challenge']);
+
+function routeRequest(request: NextRequest, forwardedHeaders: Headers): NextResponse {
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next({ request: { headers: forwardedHeaders } });
+  }
+
+  const hasSession = request.cookies.has('__Host-fvdms_session');
+  const hasChallenge = request.cookies.has('__Host-fvdms_challenge');
+
+  if (hasSession && authenticationPages.has(pathname)) {
+    return redirect(
+      request,
+      safeReturnTo(request.nextUrl.searchParams.get('returnTo')) ?? '/account',
+    );
+  }
+
+  if (challengePages.has(pathname) && !hasChallenge) {
+    return redirect(request, '/login');
+  }
+
+  if (!authenticationPages.has(pathname) && !hasSession) {
+    if (hasChallenge) return redirect(request, '/login');
+    const returnTo = `${pathname}${request.nextUrl.search}`;
+    const target = new URL('/login', request.url);
+    target.searchParams.set('returnTo', returnTo);
+    return NextResponse.redirect(target);
+  }
+
+  return NextResponse.next({ request: { headers: forwardedHeaders } });
+}
+
+function redirect(request: NextRequest, pathname: string): NextResponse {
+  return NextResponse.redirect(new URL(pathname, request.url));
+}
+
+function safeReturnTo(value: string | null): string | null {
+  if (value === null || !value.startsWith('/') || value.startsWith('//')) return null;
+  try {
+    const parsed = new URL(value, 'https://fvdms.lan');
+    return parsed.origin === 'https://fvdms.lan' ? `${parsed.pathname}${parsed.search}` : null;
+  } catch {
+    return null;
+  }
 }
 
 export const config = {

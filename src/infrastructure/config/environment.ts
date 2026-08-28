@@ -4,6 +4,7 @@ const nodeEnvironmentSchema = z.enum(['development', 'test', 'production']).defa
 const logLevelSchema = z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info');
 const positiveIntegerSchema = z.coerce.number().int().positive();
 const nonNegativeIntegerSchema = z.coerce.number().int().nonnegative();
+const positiveVersionSchema = z.coerce.number().int().positive();
 const databaseIdentifierSchema = z
   .string()
   .min(1)
@@ -27,6 +28,97 @@ const databaseConnectionSchema = z
   .refine((value) => value.DATABASE_POOL_MAX >= value.DATABASE_POOL_MIN, {
     message: 'DATABASE_POOL_MAX must be greater than or equal to DATABASE_POOL_MIN.',
     path: ['DATABASE_POOL_MAX'],
+  });
+
+function base64KeySchema(variableName: string) {
+  return z.string().superRefine((value, context) => {
+    if (!/^[A-Za-z0-9+/]{43}=$/.test(value) || Buffer.from(value, 'base64').byteLength !== 32) {
+      context.addIssue({
+        code: 'custom',
+        message: `${variableName} must decode to exactly 32 bytes.`,
+      });
+    }
+  });
+}
+
+const totpKeyRingSchema = z.string().transform((value, context) => {
+  let decoded: unknown;
+
+  try {
+    decoded = JSON.parse(value);
+  } catch {
+    context.addIssue({
+      code: 'custom',
+      message: 'AUTH_TOTP_ENCRYPTION_KEYS must be a JSON object.',
+    });
+    return z.NEVER;
+  }
+
+  const result = z
+    .record(z.string().regex(/^[1-9]\d*$/), base64KeySchema('Each TOTP encryption key'))
+    .safeParse(decoded);
+
+  if (!result.success) {
+    context.addIssue({
+      code: 'custom',
+      message: 'AUTH_TOTP_ENCRYPTION_KEYS must contain versioned 32-byte base64 keys.',
+    });
+    return z.NEVER;
+  }
+
+  return result.data;
+});
+
+const authenticationEnvironmentSchema = z
+  .object({
+    AUTH_ALLOWED_ORIGIN: z
+      .string()
+      .url()
+      .refine((value) => new URL(value).origin === value, {
+        message: 'AUTH_ALLOWED_ORIGIN must be an exact origin without a path.',
+      }),
+    AUTH_STANDARD_IDLE_TIMEOUT_SECONDS: positiveIntegerSchema.default(1_800),
+    AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS: positiveIntegerSchema.default(900),
+    AUTH_ABSOLUTE_TIMEOUT_SECONDS: positiveIntegerSchema.default(28_800),
+    AUTH_PRIVILEGED_SESSION_LIMIT: positiveIntegerSchema.default(1),
+    AUTH_RATE_LIMIT_MAX_FAILURES: positiveIntegerSchema.default(5),
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: positiveIntegerSchema.default(900),
+    AUTH_RATE_LIMIT_LOCK_SECONDS: positiveIntegerSchema.default(900),
+    AUTH_CHALLENGE_TTL_SECONDS: positiveIntegerSchema.default(300),
+    AUTH_ACTIVITY_WRITE_INTERVAL_SECONDS: positiveIntegerSchema.default(300),
+    AUTH_PASSWORD_MIN_LENGTH: positiveIntegerSchema.default(12),
+    AUTH_PASSWORD_MAX_LENGTH: positiveIntegerSchema.default(128),
+    AUTH_TOTP_ACTIVE_KEY_VERSION: positiveVersionSchema,
+    AUTH_TOTP_ENCRYPTION_KEYS: totpKeyRingSchema,
+    AUTH_RATE_LIMIT_HMAC_KEY: base64KeySchema('AUTH_RATE_LIMIT_HMAC_KEY'),
+  })
+  .superRefine((value, context) => {
+    if (!(String(value.AUTH_TOTP_ACTIVE_KEY_VERSION) in value.AUTH_TOTP_ENCRYPTION_KEYS)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUTH_TOTP_ENCRYPTION_KEYS'],
+        message: `AUTH_TOTP_ENCRYPTION_KEYS must contain active key version ${value.AUTH_TOTP_ACTIVE_KEY_VERSION}.`,
+      });
+    }
+
+    if (value.AUTH_PASSWORD_MAX_LENGTH < value.AUTH_PASSWORD_MIN_LENGTH) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUTH_PASSWORD_MAX_LENGTH'],
+        message: 'AUTH_PASSWORD_MAX_LENGTH must be at least AUTH_PASSWORD_MIN_LENGTH.',
+      });
+    }
+
+    if (
+      value.AUTH_ABSOLUTE_TIMEOUT_SECONDS < value.AUTH_STANDARD_IDLE_TIMEOUT_SECONDS ||
+      value.AUTH_ABSOLUTE_TIMEOUT_SECONDS < value.AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUTH_ABSOLUTE_TIMEOUT_SECONDS'],
+        message: 'AUTH_ABSOLUTE_TIMEOUT_SECONDS must cover both idle timeouts.',
+      });
+    }
   });
 
 const migrationConnectionSchema = databaseConnectionSchema.safeExtend({
@@ -61,10 +153,32 @@ export interface DatabaseEnvironment {
   readonly queryTimeoutMs: number;
 }
 
-export interface RuntimeEnvironment {
+export interface DatabaseRuntimeEnvironment {
   readonly nodeEnv: NodeEnvironment;
   readonly logLevel: LogLevel;
   readonly database: DatabaseEnvironment;
+}
+
+export interface RuntimeEnvironment extends DatabaseRuntimeEnvironment {
+  readonly auth: AuthenticationEnvironment;
+}
+
+export interface AuthenticationEnvironment {
+  readonly allowedOrigin: string;
+  readonly standardIdleTimeoutSeconds: number;
+  readonly privilegedIdleTimeoutSeconds: number;
+  readonly absoluteTimeoutSeconds: number;
+  readonly privilegedSessionLimit: number;
+  readonly rateLimitMaxFailures: number;
+  readonly rateLimitWindowSeconds: number;
+  readonly rateLimitLockSeconds: number;
+  readonly challengeTtlSeconds: number;
+  readonly activityWriteIntervalSeconds: number;
+  readonly passwordMinLength: number;
+  readonly passwordMaxLength: number;
+  readonly totpActiveKeyVersion: number;
+  readonly totpEncryptionKeys: Readonly<Record<string, string>>;
+  readonly rateLimitHmacKey: string;
 }
 
 export interface BootstrapEnvironment {
@@ -89,7 +203,7 @@ function rejectPublicSecrets(environment: Record<string, string | undefined>): v
     ([key, value]) =>
       value !== undefined &&
       key.startsWith('NEXT_PUBLIC_') &&
-      /(PASSWORD|SECRET|TOKEN|AUTHORIZATION|DATABASE)/i.test(key),
+      /(PASSWORD|SECRET|TOKEN|AUTHORIZATION|DATABASE|CSRF|TOTP|HMAC|ENCRYPTION|KEY)/i.test(key),
   );
 
   if (exposedSecret) {
@@ -126,6 +240,7 @@ export function parseRuntimeEnvironment(
 ): RuntimeEnvironment {
   rejectPublicSecrets(environment);
   const parsed = databaseConnectionSchema.parse(environment);
+  const auth = authenticationEnvironmentSchema.parse(environment);
 
   return {
     ...parseCommonEnvironment(environment),
@@ -133,12 +248,29 @@ export function parseRuntimeEnvironment(
       user: parsed.DATABASE_USER,
       password: parsed.DATABASE_PASSWORD,
     }),
+    auth: {
+      allowedOrigin: auth.AUTH_ALLOWED_ORIGIN,
+      standardIdleTimeoutSeconds: auth.AUTH_STANDARD_IDLE_TIMEOUT_SECONDS,
+      privilegedIdleTimeoutSeconds: auth.AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS,
+      absoluteTimeoutSeconds: auth.AUTH_ABSOLUTE_TIMEOUT_SECONDS,
+      privilegedSessionLimit: auth.AUTH_PRIVILEGED_SESSION_LIMIT,
+      rateLimitMaxFailures: auth.AUTH_RATE_LIMIT_MAX_FAILURES,
+      rateLimitWindowSeconds: auth.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+      rateLimitLockSeconds: auth.AUTH_RATE_LIMIT_LOCK_SECONDS,
+      challengeTtlSeconds: auth.AUTH_CHALLENGE_TTL_SECONDS,
+      activityWriteIntervalSeconds: auth.AUTH_ACTIVITY_WRITE_INTERVAL_SECONDS,
+      passwordMinLength: auth.AUTH_PASSWORD_MIN_LENGTH,
+      passwordMaxLength: auth.AUTH_PASSWORD_MAX_LENGTH,
+      totpActiveKeyVersion: auth.AUTH_TOTP_ACTIVE_KEY_VERSION,
+      totpEncryptionKeys: auth.AUTH_TOTP_ENCRYPTION_KEYS,
+      rateLimitHmacKey: auth.AUTH_RATE_LIMIT_HMAC_KEY,
+    },
   };
 }
 
 export function parseMigrationEnvironment(
   environment: Record<string, string | undefined>,
-): RuntimeEnvironment {
+): DatabaseRuntimeEnvironment {
   rejectPublicSecrets(environment);
   const parsed = migrationConnectionSchema.parse(environment);
 
