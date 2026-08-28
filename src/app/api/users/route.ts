@@ -17,10 +17,12 @@ const listQuerySchema = z.object({
 
 export async function GET(request: Request): Promise<Response> {
   const composition = createApplicationComposition();
-  return withResponseHandler(composition, async ({ request: currentRequest }) => {
+  return withResponseHandler(composition, async ({ request: currentRequest, requestId }) => {
     const { principal } = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.read',
+      requestId,
+      routeTemplate: '/api/users',
     });
     const url = new URL(currentRequest.url);
     const input = listQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -41,6 +43,8 @@ export async function POST(request: Request): Promise<Response> {
       const authenticated = await authenticateRequest(currentRequest, {
         ...composition,
         permission: 'user.manage',
+        requestId,
+        routeTemplate: '/api/users',
       });
       assertSecureJsonMutation({
         request: currentRequest,

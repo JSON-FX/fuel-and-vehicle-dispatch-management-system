@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import { AuthorizationError, ValidationError } from '@/application/shared/errors/application-error';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
@@ -46,16 +47,18 @@ export class CreateRole {
         input.permissionPublicIds,
         at,
       );
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.role.created',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: null,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: { rolePublicId: publicId, privileged: input.isPrivileged },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.role.created',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: null,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: { rolePublicId: publicId, privileged: input.isPrivileged },
+          occurredAt: at,
+        }),
+      );
     });
     return publicId;
   }

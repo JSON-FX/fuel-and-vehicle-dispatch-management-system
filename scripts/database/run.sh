@@ -15,4 +15,4 @@ if [ "${FVDMS_CONTAINER:-}" = "1" ]; then
   exec pnpm exec tsx "scripts/database/${operation}.ts"
 fi
 
-exec docker compose run --rm --no-deps app pnpm exec tsx "scripts/database/${operation}.ts"
+exec docker compose run --rm --no-deps database-tools pnpm exec tsx "scripts/database/${operation}.ts"

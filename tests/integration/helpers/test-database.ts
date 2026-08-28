@@ -10,6 +10,8 @@ export interface TestDatabaseConfiguration {
   readonly database: string;
   readonly user: string;
   readonly password: string;
+  readonly administratorUser: string;
+  readonly administratorPassword: string;
 }
 
 declare module 'vitest' {

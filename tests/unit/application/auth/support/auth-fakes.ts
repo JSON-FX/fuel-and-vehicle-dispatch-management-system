@@ -2,6 +2,10 @@ import type { AuthRepositories, AuthTransaction } from '@/application/auth/ports
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PublicId } from '@/domain/shared/value-objects/public-id';
 
+export const TEST_ACTOR_PUBLIC_ID = '01900000-0000-7000-8000-000000000901';
+export const TEST_TARGET_PUBLIC_ID = '01900000-0000-7000-8000-000000000902';
+export const TEST_ROLE_PUBLIC_ID = '01900000-0000-7000-8000-000000000903';
+
 const unavailableRepository = new Proxy(
   {},
   {
@@ -21,7 +25,7 @@ export function authRepositories(overrides: Partial<AuthRepositories> = {}): Aut
     rateLimits: unavailableRepository,
     totpFactors: unavailableRepository,
     passwordResets: unavailableRepository,
-    securityEvents: unavailableRepository,
+    auditEvents: unavailableRepository,
     ...overrides,
   } as AuthRepositories;
 }

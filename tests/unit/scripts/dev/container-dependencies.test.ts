@@ -42,6 +42,37 @@ describe('container dependency recovery', () => {
     );
   });
 
+  it('runs a non-routed worker without application or verifier credentials', () => {
+    const compose = JSON.parse(
+      execFileSync('docker', ['compose', 'config', '--format', 'json'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      }),
+    ) as {
+      services: Record<
+        string,
+        {
+          environment?: Record<string, string>;
+          labels?: Record<string, string>;
+          ports?: unknown[];
+        }
+      >;
+    };
+    const app = compose.services.app!;
+    const worker = compose.services['audit-worker']!;
+
+    expect(worker).toBeDefined();
+    expect(worker.environment?.DATABASE_USER).toBe('fvdms_audit_worker');
+    expect(worker.environment?.AUDIT_SINK_DATABASE_USER).toBe('fvdms_audit_sink_writer');
+    expect(worker.environment?.AUDIT_VERIFIER_DATABASE_PASSWORD).toBeUndefined();
+    expect(worker.environment?.AUTH_TOTP_ENCRYPTION_KEYS).toBeUndefined();
+    expect(worker.labels?.['traefik.enable']).not.toBe('true');
+    expect(worker.ports).toBeUndefined();
+    expect(app.environment?.AUDIT_WORKER_DATABASE_PASSWORD).toBeUndefined();
+    expect(app.environment?.AUDIT_SINK_DATABASE_PASSWORD).toBeUndefined();
+    expect(app.environment?.AUDIT_VERIFIER_DATABASE_PASSWORD).toBeUndefined();
+  });
+
   it('waits for the application container health check before returning', () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), 'fvdms-dev-up-'));
     const commandLog = join(temporaryDirectory, 'commands.log');
@@ -67,7 +98,14 @@ describe('container dependency recovery', () => {
         },
       });
 
-      expect(readFileSync(commandLog, 'utf8')).toContain('docker compose up -d --wait app\n');
+      const commands = readFileSync(commandLog, 'utf8').trim().split('\n');
+      expect(commands.slice(1)).toEqual([
+        'docker compose run --rm --no-deps --user root database-tools chown -R node:node /pnpm/store',
+        'pnpm db:bootstrap',
+        'pnpm db:migrate',
+        'pnpm db:bootstrap',
+        'docker compose up -d --wait app audit-worker',
+      ]);
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });
     }

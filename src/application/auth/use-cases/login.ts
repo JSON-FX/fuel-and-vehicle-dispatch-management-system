@@ -5,6 +5,7 @@ import type {
 } from '@/application/auth/dto/authentication-dtos';
 import { createCurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthRepositories, AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { PasswordHasher } from '@/application/auth/ports/password-hasher';
 import type { RateLimitKeyGenerator } from '@/application/auth/ports/rate-limit-repository';
@@ -189,7 +190,7 @@ export class Login {
     requestId: string,
     targetPublicId: string | null,
   ): Promise<boolean> {
-    return this.dependencies.transaction.execute(async ({ rateLimits, securityEvents }) => {
+    return this.dependencies.transaction.execute(async ({ rateLimits, auditEvents }) => {
       const policy = this.dependencies.policy;
       const account = await rateLimits.recordFailure({
         bucketType: 'ACCOUNT',
@@ -207,38 +208,42 @@ export class Login {
         lockSeconds: policy.rateLimitLockSeconds,
         maximumFailures: policy.rateLimitMaxFailures,
       });
-      await securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.login.failed',
-        actorPublicId: null,
-        targetPublicId,
-        requestId,
-        reasonCode: 'invalid_credentials',
-        metadata: {},
-        occurredAt: now,
-      });
+      await auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.login.failed',
+          actorPublicId: null,
+          targetPublicId,
+          requestId,
+          reasonCode: 'invalid_credentials',
+          metadata: {},
+          occurredAt: now,
+        }),
+      );
       return account.lockedUntil !== null || source.lockedUntil !== null;
     });
   }
 
   private appendEvent(
     repositories: AuthRepositories,
-    type: string,
+    action: string,
     userPublicId: string,
     requestId: string,
     occurredAt: Date,
     metadata: Readonly<Record<string, string | number | boolean | null>>,
   ): Promise<void> {
-    return repositories.securityEvents.append({
-      publicId: this.dependencies.publicIds.generate().toString(),
-      type,
-      actorPublicId: userPublicId,
-      targetPublicId: userPublicId,
-      requestId,
-      reasonCode: null,
-      metadata,
-      occurredAt,
-    });
+    return repositories.auditEvents.append(
+      buildAuthenticationAuditEvent({
+        publicId: this.dependencies.publicIds.generate().toString(),
+        action,
+        actorPublicId: userPublicId,
+        targetPublicId: userPublicId,
+        requestId,
+        reasonCode: null,
+        metadata,
+        occurredAt,
+      }),
+    );
   }
 
   private async issueChallenge(

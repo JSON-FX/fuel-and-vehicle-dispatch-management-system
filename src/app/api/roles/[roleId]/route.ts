@@ -14,6 +14,8 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'role.manage',
+      requestId,
+      routeTemplate: '/api/roles/:roleId',
     });
     assertSecureJsonMutation({
       request: currentRequest,

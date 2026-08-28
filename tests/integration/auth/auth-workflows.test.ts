@@ -217,8 +217,8 @@ async function createUser(input: {
 }
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
+  await sql`delete from fvdms_audit.audit_outbox`.execute(target);
   for (const table of [
-    'auth_security_events',
     'admin_password_resets',
     'user_totp_factors',
     'login_rate_limits',

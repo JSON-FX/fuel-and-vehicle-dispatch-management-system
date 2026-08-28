@@ -4,11 +4,9 @@ import {
   createCurrentPrincipal,
   type CurrentPrincipal,
 } from '@/application/auth/dto/authentication-dtos';
+import type { AuditEventInput } from '@/application/audit/dto/audit-event-dtos';
+import type { AuditEventPort } from '@/application/audit/ports/audit-event-port';
 import type { AuthRepositories, AuthTransaction } from '@/application/auth/ports/auth-transaction';
-import type {
-  SecurityEvent,
-  SecurityEventPort,
-} from '@/application/auth/ports/security-event-port';
 
 describe('authentication application contracts', () => {
   it('keeps the current-principal DTO free of persisted and bearer secrets', () => {
@@ -41,28 +39,33 @@ describe('authentication application contracts', () => {
   });
 
   it('runs a security workflow through one transaction-scoped repository set', async () => {
-    const events: SecurityEvent[] = [];
-    const securityEvents: SecurityEventPort = {
+    const events: AuditEventInput[] = [];
+    const auditEvents: AuditEventPort = {
       append: async (event) => {
-        events.push(event);
+        if ('action' in event) events.push(event);
       },
     };
-    const repositories = { securityEvents } as AuthRepositories;
+    const repositories = { auditEvents } as AuthRepositories;
     const transaction: AuthTransaction = {
       execute: async (work) => work(repositories),
     };
-    const event: SecurityEvent = {
+    const event: AuditEventInput = {
       publicId: '01900000-0000-7000-8000-000000000002',
-      type: 'auth.session.revoked',
+      schemaVersion: 1,
+      occurredAt: '2026-08-28T00:00:00.000Z',
       actorPublicId: null,
-      targetPublicId: '01900000-0000-7000-8000-000000000001',
+      action: 'auth.session.revoked',
+      entity: { type: 'user', publicId: '01900000-0000-7000-8000-000000000001' },
       requestId: '01900000-0000-7000-8000-000000000003',
+      ipAddress: null,
+      userAgent: null,
       reasonCode: 'logout',
+      before: null,
+      after: null,
       metadata: {},
-      occurredAt: new Date('2026-08-28T00:00:00.000Z'),
     };
 
-    await transaction.execute(async ({ securityEvents: eventStore }) => {
+    await transaction.execute(async ({ auditEvents: eventStore }) => {
       await eventStore.append(event);
     });
 

@@ -9,10 +9,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request): Promise<Response> {
   const composition = createApplicationComposition();
-  return withResponseHandler(composition, async ({ request: currentRequest }) => {
+  return withResponseHandler(composition, async ({ request: currentRequest, requestId }) => {
     const { principal } = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'role.read',
+      requestId,
+      routeTemplate: '/api/roles',
     });
     return composition.listRoles.execute(principal);
   })(request);
@@ -26,6 +28,8 @@ export async function POST(request: Request): Promise<Response> {
       const authenticated = await authenticateRequest(currentRequest, {
         ...composition,
         permission: 'role.manage',
+        requestId,
+        routeTemplate: '/api/roles',
       });
       assertSecureJsonMutation({
         request: currentRequest,

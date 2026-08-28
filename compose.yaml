@@ -21,12 +21,15 @@ services:
       DATABASE_POOL_MAX: '10'
       DATABASE_CONNECT_TIMEOUT_MS: '5000'
       DATABASE_QUERY_TIMEOUT_MS: '2000'
-      MIGRATION_DATABASE_USER: fvdms_migrator
-      MIGRATION_DATABASE_PASSWORD: local-fvdms-migrator-password
-      MYSQL_ADMIN_HOST: mysql
-      MYSQL_ADMIN_PORT: '3306'
-      MYSQL_ADMIN_USER: root
-      MYSQL_ADMIN_PASSWORD: ''
+      AUDIT_DATABASE_NAME: fvdms_audit
+      AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
+      AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536'
+      AUDIT_CHAIN_BATCH_SIZE: '100'
+      AUDIT_SINK_BATCH_SIZE: '100'
+      AUDIT_POLL_INTERVAL_MS: '1000'
+      AUDIT_RETRY_BASE_MS: '1000'
+      AUDIT_RETRY_MAX_MS: '60000'
+      AUDIT_VERIFICATION_PAGE_SIZE: '500'
       AUTH_ALLOWED_ORIGIN: https://fvdms.lan
       AUTH_STANDARD_IDLE_TIMEOUT_SECONDS: '1800'
       AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS: '900'
@@ -62,6 +65,130 @@ services:
       - 'traefik.http.routers.fvdms.tls=true'
       - 'traefik.http.routers.fvdms.service=fvdms'
       - 'traefik.http.services.fvdms.loadbalancer.server.port=3000'
+    networks:
+      - dev-net
+
+  audit-worker:
+    build:
+      context: .
+      target: development
+    container_name: fvdms-audit-worker
+    restart: unless-stopped
+    command: ['./scripts/audit/worker.sh']
+    environment:
+      FVDMS_CONTAINER: '1'
+      PNPM_CONFIG_STORE_DIR: /pnpm/store
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_HOST: mysql
+      DATABASE_PORT: '3306'
+      DATABASE_NAME: fvdms
+      DATABASE_USER: fvdms_audit_worker
+      DATABASE_PASSWORD: local-fvdms-audit-worker-password
+      DATABASE_POOL_MIN: '1'
+      DATABASE_POOL_MAX: '4'
+      DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      DATABASE_QUERY_TIMEOUT_MS: '2000'
+      AUDIT_DATABASE_NAME: fvdms_audit
+      AUDIT_SINK_HOST: mysql
+      AUDIT_SINK_PORT: '3306'
+      AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
+      AUDIT_WORKER_DATABASE_USER: fvdms_audit_worker
+      AUDIT_WORKER_DATABASE_PASSWORD: local-fvdms-audit-worker-password
+      AUDIT_SINK_DATABASE_USER: fvdms_audit_sink_writer
+      AUDIT_SINK_DATABASE_PASSWORD: local-fvdms-audit-sink-writer-password
+      AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536'
+      AUDIT_CHAIN_BATCH_SIZE: '100'
+      AUDIT_SINK_BATCH_SIZE: '100'
+      AUDIT_POLL_INTERVAL_MS: '1000'
+      AUDIT_RETRY_BASE_MS: '1000'
+      AUDIT_RETRY_MAX_MS: '60000'
+      AUDIT_VERIFICATION_PAGE_SIZE: '500'
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - pnpm-store:/pnpm/store
+    networks:
+      - dev-net
+
+  audit-verifier:
+    profiles: [tools]
+    build:
+      context: .
+      target: development
+    command: ['./scripts/audit/verify.sh']
+    environment:
+      FVDMS_CONTAINER: '1'
+      PNPM_CONFIG_STORE_DIR: /pnpm/store
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_HOST: mysql
+      DATABASE_PORT: '3306'
+      DATABASE_NAME: fvdms
+      DATABASE_USER: fvdms_audit_verifier
+      DATABASE_PASSWORD: local-fvdms-audit-verifier-password
+      DATABASE_POOL_MIN: '1'
+      DATABASE_POOL_MAX: '2'
+      DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      DATABASE_QUERY_TIMEOUT_MS: '2000'
+      AUDIT_DATABASE_NAME: fvdms_audit
+      AUDIT_SINK_HOST: mysql
+      AUDIT_SINK_PORT: '3306'
+      AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
+      AUDIT_VERIFIER_DATABASE_USER: fvdms_audit_verifier
+      AUDIT_VERIFIER_DATABASE_PASSWORD: local-fvdms-audit-verifier-password
+      AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536'
+      AUDIT_CHAIN_BATCH_SIZE: '100'
+      AUDIT_SINK_BATCH_SIZE: '100'
+      AUDIT_POLL_INTERVAL_MS: '1000'
+      AUDIT_RETRY_BASE_MS: '1000'
+      AUDIT_RETRY_MAX_MS: '60000'
+      AUDIT_VERIFICATION_PAGE_SIZE: '500'
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - pnpm-store:/pnpm/store
+    networks:
+      - dev-net
+
+  database-tools:
+    profiles: [tools]
+    build:
+      context: .
+      target: development
+    command: ['true']
+    environment:
+      FVDMS_CONTAINER: '1'
+      PNPM_CONFIG_STORE_DIR: /pnpm/store
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_HOST: mysql
+      DATABASE_PORT: '3306'
+      DATABASE_NAME: fvdms
+      DATABASE_USER: fvdms_app
+      DATABASE_PASSWORD: local-fvdms-app-password
+      DATABASE_POOL_MIN: '1'
+      DATABASE_POOL_MAX: '4'
+      DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      DATABASE_QUERY_TIMEOUT_MS: '2000'
+      MIGRATION_DATABASE_USER: fvdms_migrator
+      MIGRATION_DATABASE_PASSWORD: local-fvdms-migrator-password
+      MYSQL_ADMIN_HOST: mysql
+      MYSQL_ADMIN_PORT: '3306'
+      MYSQL_ADMIN_USER: root
+      MYSQL_ADMIN_PASSWORD: ''
+      AUDIT_DATABASE_NAME: fvdms_audit
+      AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
+      AUDIT_WORKER_DATABASE_USER: fvdms_audit_worker
+      AUDIT_WORKER_DATABASE_PASSWORD: local-fvdms-audit-worker-password
+      AUDIT_SINK_DATABASE_USER: fvdms_audit_sink_writer
+      AUDIT_SINK_DATABASE_PASSWORD: local-fvdms-audit-sink-writer-password
+      AUDIT_VERIFIER_DATABASE_USER: fvdms_audit_verifier
+      AUDIT_VERIFIER_DATABASE_PASSWORD: local-fvdms-audit-verifier-password
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - pnpm-store:/pnpm/store
     networks:
       - dev-net
 

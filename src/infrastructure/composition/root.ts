@@ -3,6 +3,7 @@ import type { SecureTokenGenerator } from '@/application/auth/ports/secure-token
 import { AuthenticateChallenge } from '@/application/auth/services/authenticate-challenge';
 import { AuthenticateSession } from '@/application/auth/services/authenticate-session';
 import { AuthorizePermission } from '@/application/auth/services/authorize-permission';
+import { RecordAuthorizationDenial } from '@/application/auth/services/record-authorization-denial';
 import { AssignRolePermissions } from '@/application/auth/use-cases/assign-role-permissions';
 import { AssignUserRoles } from '@/application/auth/use-cases/assign-user-roles';
 import { ChangePassword } from '@/application/auth/use-cases/change-password';
@@ -29,6 +30,8 @@ import { StartTotpEnrollment } from '@/application/auth/use-cases/start-totp-enr
 import { UpdateRole } from '@/application/auth/use-cases/update-role';
 import { UpdateUser } from '@/application/auth/use-cases/update-user';
 import { GetHealthStatus } from '@/application/health/use-cases/get-health-status';
+import type { AuditWebComposition } from '@/infrastructure/composition/audit';
+import { createAuditWebComposition } from '@/infrastructure/composition/audit';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PasswordPolicy } from '@/domain/user/value-objects/password-policy';
@@ -49,7 +52,7 @@ import { createPinoLogger } from '@/infrastructure/logging/pino-logger';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=19456,p=1,t=2$s2r5DIVnB+eVyeEK/iQvPQ$t/XFGhEWgUdX+otDbdK8TKnVKv/0KQMpzSQq5DEahaU';
 
-export interface ApplicationComposition {
+export interface ApplicationComposition extends AuditWebComposition {
   readonly getHealthStatus: GetHealthStatus;
   readonly logger: Logger;
   readonly publicIdGenerator: PublicIdGenerator;
@@ -59,6 +62,7 @@ export interface ApplicationComposition {
   readonly authenticateChallenge: AuthenticateChallenge;
   readonly authenticateSession: AuthenticateSession;
   readonly authorizePermission: AuthorizePermission;
+  readonly recordAuthorizationDenial: RecordAuthorizationDenial;
   readonly logout: Logout;
   readonly getCurrentPrincipal: GetCurrentPrincipal;
   readonly getCurrentChallenge: GetCurrentChallenge;
@@ -102,8 +106,12 @@ function buildApplicationComposition(
 ): ApplicationComposition {
   const configuration = parseRuntimeEnvironment(environment);
   const database = getRuntimeDatabase(environment);
-  const repositories = createKyselyAuthRepositories(database);
-  const transaction = new KyselyAuthTransaction(database);
+  const auditOptions = {
+    primarySchema: configuration.audit.primarySchema,
+    maximumCanonicalPayloadBytes: configuration.audit.maxCanonicalPayloadBytes,
+  } as const;
+  const repositories = createKyselyAuthRepositories(database, auditOptions);
+  const transaction = new KyselyAuthTransaction(database, auditOptions);
   const publicIds = new UuidV7Generator();
   const clock: Clock = Object.freeze({ now: () => new Date() });
   const passwordHasher = new Argon2PasswordHasher();
@@ -115,6 +123,7 @@ function buildApplicationComposition(
     configuration.auth.totpActiveKeyVersion,
   );
   const common = { transaction, publicIds, clock } as const;
+  const auditWeb = createAuditWebComposition(database, auditOptions, { publicIds, clock });
   const sessionPolicy = {
     standardIdleTimeoutSeconds: configuration.auth.standardIdleTimeoutSeconds,
     privilegedIdleTimeoutSeconds: configuration.auth.privilegedIdleTimeoutSeconds,
@@ -134,6 +143,7 @@ function buildApplicationComposition(
   const authenticateChallenge = new AuthenticateChallenge({ transaction, tokenGenerator, clock });
 
   return Object.freeze({
+    ...auditWeb,
     getHealthStatus: new GetHealthStatus(
       new KyselyHealthCheckRepository(database, configuration.database.queryTimeoutMs),
     ),
@@ -160,6 +170,7 @@ function buildApplicationComposition(
     authenticateChallenge,
     authenticateSession,
     authorizePermission: new AuthorizePermission(),
+    recordAuthorizationDenial: new RecordAuthorizationDenial(common),
     logout: new Logout({ transaction, tokenGenerator, publicIds, clock }),
     getCurrentPrincipal: new GetCurrentPrincipal({
       authenticateSession,

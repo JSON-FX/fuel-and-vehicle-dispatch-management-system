@@ -6,6 +6,8 @@ import {
   authRepositories,
   FakeAuthTransaction,
   SequencePublicIdGenerator,
+  TEST_ACTOR_PUBLIC_ID,
+  TEST_TARGET_PUBLIC_ID,
 } from './support/auth-fakes';
 
 describe('ResetUserPassword', () => {
@@ -15,7 +17,7 @@ describe('ResetUserPassword', () => {
       transaction: new FakeAuthTransaction(
         authRepositories({
           users: {
-            findByPublicId: async () => ({ publicId: 'target' }),
+            findByPublicId: async () => ({ publicId: TEST_TARGET_PUBLIC_ID }),
             updatePassword: async () => {
               operations.push('password');
               return true;
@@ -28,7 +30,7 @@ describe('ResetUserPassword', () => {
               operations.push('evidence');
             },
           },
-          securityEvents: {
+          auditEvents: {
             append: async () => {
               operations.push('event');
             },
@@ -43,10 +45,10 @@ describe('ResetUserPassword', () => {
 
     const result = await useCase.execute({
       actor: {
-        userPublicId: 'actor',
+        userPublicId: TEST_ACTOR_PUBLIC_ID,
         permissions: ['user.password.reset'],
       } as never,
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       reason: 'User cannot access the existing credential.',
       requestId: 'request-id',
     });

@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import {
   AuthorizationError,
@@ -46,16 +47,18 @@ export class SoftDeleteUser {
         throw new NotFoundError();
       await repositories.sessions.revokeForUser(input.targetPublicId, at, 'user_deleted');
       await repositories.challenges.revokeForUser(input.targetPublicId, at);
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.user.deleted',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: input.targetPublicId,
-        requestId: input.requestId,
-        reasonCode: 'soft_delete',
-        metadata: { reason: input.reason.trim() },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.user.deleted',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: input.targetPublicId,
+          requestId: input.requestId,
+          reasonCode: 'soft_delete',
+          metadata: { reason: input.reason.trim() },
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

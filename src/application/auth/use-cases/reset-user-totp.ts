@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import {
   AuthorizationError,
@@ -43,16 +44,18 @@ export class ResetUserTotp {
         'administrator_totp_reset',
       );
       await repositories.challenges.revokeForUser(input.targetPublicId, at);
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.totp.reset',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: input.targetPublicId,
-        requestId: input.requestId,
-        reasonCode: 'administrator_reset',
-        metadata: { reason: input.reason.trim() },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.totp.reset',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: input.targetPublicId,
+          requestId: input.requestId,
+          reasonCode: 'administrator_reset',
+          metadata: { reason: input.reason.trim() },
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

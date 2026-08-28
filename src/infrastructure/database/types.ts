@@ -1,5 +1,10 @@
 import type { ColumnType, Generated } from 'kysely';
 
+import type {
+  AuditPrimaryDatabase,
+  AuditSinkDatabase,
+} from '@/infrastructure/database/audit/types';
+
 export type JsonValue =
   string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
@@ -145,7 +150,7 @@ export interface AuthSecurityEventsTable {
   created_at: CreatedTimestamp;
 }
 
-export interface Database {
+export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
   roles: RolesTable;
@@ -157,5 +162,8 @@ export interface Database {
   login_rate_limits: LoginRateLimitsTable;
   user_totp_factors: UserTotpFactorsTable;
   admin_password_resets: AdminPasswordResetsTable;
+  /** Migration-only legacy table. Migration 000003 removes it after verified backfill. */
   auth_security_events: AuthSecurityEventsTable;
 }
+
+export type DatabaseWithLegacyAuthSecurityEvents = Database;

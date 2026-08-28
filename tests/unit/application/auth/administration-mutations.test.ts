@@ -10,10 +10,13 @@ import {
   authRepositories,
   FakeAuthTransaction,
   SequencePublicIdGenerator,
+  TEST_ACTOR_PUBLIC_ID,
+  TEST_ROLE_PUBLIC_ID,
+  TEST_TARGET_PUBLIC_ID,
 } from './support/auth-fakes';
 
 const now = new Date('2026-08-28T00:00:00.000Z');
-const actor = (permissions: readonly string[], userPublicId = 'actor') =>
+const actor = (permissions: readonly string[], userPublicId = TEST_ACTOR_PUBLIC_ID) =>
   ({ userPublicId, permissions }) as never;
 const dependencies = (overrides = {}) => ({
   transaction: new FakeAuthTransaction(authRepositories(overrides)),
@@ -30,13 +33,13 @@ describe('administration mutations', () => {
       dependencies({
         users: { updateIdentity } as never,
         sessions: { revokeForUser } as never,
-        securityEvents: { append } as never,
+        auditEvents: { append } as never,
       }),
     );
 
     await useCase.execute({
       actor: actor(['user.manage']),
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       email: ' DISPATCHER@EXAMPLE.LAN ',
       fullName: ' Dispatch Operator ',
       isActive: false,
@@ -44,13 +47,13 @@ describe('administration mutations', () => {
     });
 
     expect(updateIdentity).toHaveBeenCalledWith({
-      publicId: 'target',
+      publicId: TEST_TARGET_PUBLIC_ID,
       email: 'dispatcher@example.lan',
       fullName: 'Dispatch Operator',
       isActive: false,
       updatedAt: now,
     });
-    expect(revokeForUser).toHaveBeenCalledWith('target', now, 'status_changed');
+    expect(revokeForUser).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now, 'status_changed');
     expect(append).toHaveBeenCalledOnce();
   });
 
@@ -60,13 +63,13 @@ describe('administration mutations', () => {
       dependencies({
         users: { updateIdentity: vi.fn().mockResolvedValue(true) } as never,
         sessions: { revokeForUser } as never,
-        securityEvents: { append: vi.fn() } as never,
+        auditEvents: { append: vi.fn() } as never,
       }),
     );
 
     await useCase.execute({
       actor: actor(['user.manage']),
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       fullName: 'New Name',
       requestId: 'request-id',
     });
@@ -78,13 +81,17 @@ describe('administration mutations', () => {
     const useCase = new UpdateUser(
       dependencies({ users: { updateIdentity: vi.fn().mockResolvedValue(false) } as never }),
     );
-    const base = { targetPublicId: 'target', requestId: 'request-id' };
+    const base = { targetPublicId: TEST_TARGET_PUBLIC_ID, requestId: 'request-id' };
 
     await expect(useCase.execute({ ...base, actor: actor([]) })).rejects.toMatchObject({
       httpStatus: 403,
     });
     await expect(
-      useCase.execute({ ...base, actor: actor(['user.manage'], 'target'), isActive: false }),
+      useCase.execute({
+        ...base,
+        actor: actor(['user.manage'], TEST_TARGET_PUBLIC_ID),
+        isActive: false,
+      }),
     ).rejects.toMatchObject({ httpStatus: 403 });
     await expect(
       useCase.execute({ ...base, actor: actor(['user.manage']), fullName: 'Missing' }),
@@ -98,14 +105,14 @@ describe('administration mutations', () => {
     const restoreInactive = vi.fn().mockResolvedValue(true);
     const append = vi.fn();
     await new RestoreUser(
-      dependencies({ users: { restoreInactive } as never, securityEvents: { append } as never }),
+      dependencies({ users: { restoreInactive } as never, auditEvents: { append } as never }),
     ).execute({
       actor: actor(['user.manage']),
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       requestId: 'request-id',
     });
 
-    expect(restoreInactive).toHaveBeenCalledWith('target', now);
+    expect(restoreInactive).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now);
     expect(append).toHaveBeenCalledOnce();
   });
 
@@ -114,12 +121,16 @@ describe('administration mutations', () => {
       dependencies({ users: { restoreInactive: vi.fn().mockResolvedValue(false) } as never }),
     );
     await expect(
-      useCase.execute({ actor: actor([]), targetPublicId: 'target', requestId: 'request-id' }),
+      useCase.execute({
+        actor: actor([]),
+        targetPublicId: TEST_TARGET_PUBLIC_ID,
+        requestId: 'request-id',
+      }),
     ).rejects.toMatchObject({ httpStatus: 403 });
     await expect(
       useCase.execute({
         actor: actor(['user.manage']),
-        targetPublicId: 'target',
+        targetPublicId: TEST_TARGET_PUBLIC_ID,
         requestId: 'request-id',
       }),
     ).rejects.toMatchObject({ httpStatus: 404 });
@@ -129,16 +140,16 @@ describe('administration mutations', () => {
     const revokeForUser = vi.fn().mockResolvedValue(3);
     const append = vi.fn();
     const result = await new RevokeUserSessions(
-      dependencies({ sessions: { revokeForUser } as never, securityEvents: { append } as never }),
+      dependencies({ sessions: { revokeForUser } as never, auditEvents: { append } as never }),
     ).execute({
       actor: actor(['user.session.revoke']),
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       requestId: 'request-id',
       reason: 'operator_request',
     });
 
     expect(result).toBe(3);
-    expect(revokeForUser).toHaveBeenCalledWith('target', now, 'operator_request');
+    expect(revokeForUser).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now, 'operator_request');
     expect(append).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ count: 3 }) }),
     );
@@ -148,7 +159,7 @@ describe('administration mutations', () => {
     await expect(
       new RevokeUserSessions(dependencies()).execute({
         actor: actor([]),
-        targetPublicId: 'target',
+        targetPublicId: TEST_TARGET_PUBLIC_ID,
         requestId: 'request-id',
         reason: 'operator_request',
       }),
@@ -164,12 +175,12 @@ describe('administration mutations', () => {
     const useCase = new RevokeUserSessions(
       dependencies({
         sessions: { listForUser, revoke } as never,
-        securityEvents: { append: vi.fn() } as never,
+        auditEvents: { append: vi.fn() } as never,
       }),
     );
     const input = {
       actor: actor(['user.session.revoke']),
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       sessionPublicId: 'session-public-id',
       requestId: 'request-id',
       reason: 'operator_request',
@@ -187,7 +198,7 @@ describe('administration mutations', () => {
       dependencies({
         roles: { create } as never,
         permissions: { replaceRolePermissions } as never,
-        securityEvents: { append: vi.fn() } as never,
+        auditEvents: { append: vi.fn() } as never,
       }),
     ).execute({
       actor: actor(['role.manage']),
@@ -231,21 +242,21 @@ describe('administration mutations', () => {
     await new AssignRolePermissions(
       dependencies({
         roles: {
-          findByPublicId: vi.fn().mockResolvedValue({ publicId: 'role' }),
+          findByPublicId: vi.fn().mockResolvedValue({ publicId: TEST_ROLE_PUBLIC_ID }),
           userPublicIdsForRole: vi.fn().mockResolvedValue(['user-1', 'user-2']),
         } as never,
         permissions: { replaceRolePermissions } as never,
         sessions: { revokeForUser } as never,
-        securityEvents: { append } as never,
+        auditEvents: { append } as never,
       }),
     ).execute({
       actor: actor(['role.manage']),
-      rolePublicId: 'role',
+      rolePublicId: TEST_ROLE_PUBLIC_ID,
       permissionPublicIds: ['permission'],
       requestId: 'request-id',
     });
 
-    expect(replaceRolePermissions).toHaveBeenCalledWith('role', ['permission'], now);
+    expect(replaceRolePermissions).toHaveBeenCalledWith(TEST_ROLE_PUBLIC_ID, ['permission'], now);
     expect(revokeForUser).toHaveBeenCalledTimes(2);
     expect(append).toHaveBeenCalledOnce();
   });

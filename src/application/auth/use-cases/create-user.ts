@@ -1,6 +1,7 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { OneTimeCredentialDto } from '@/application/auth/dto/user-administration-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { PasswordHasher } from '@/application/auth/ports/password-hasher';
 import type { SecureTokenGenerator } from '@/application/auth/ports/secure-token-generator';
@@ -65,16 +66,18 @@ export class CreateUser {
         createdAt: at,
       });
       await repositories.roles.replaceUserRoles(publicId, input.rolePublicIds, at);
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.user.created',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: publicId,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: {},
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.user.created',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: publicId,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: {},
+          occurredAt: at,
+        }),
+      );
     });
     return { temporaryPassword, targetPublicId: publicId };
   }

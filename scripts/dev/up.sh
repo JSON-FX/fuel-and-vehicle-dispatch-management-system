@@ -6,6 +6,8 @@ infrastructure_compose="$project_root/../infra/docker-compose.yml"
 
 docker compose -f "$infrastructure_compose" up -d traefik mysql
 cd "$project_root"
+docker compose run --rm --no-deps --user root database-tools chown -R node:node /pnpm/store
 pnpm db:bootstrap
 pnpm db:migrate
-docker compose up -d --wait app
+pnpm db:bootstrap
+docker compose up -d --wait app audit-worker

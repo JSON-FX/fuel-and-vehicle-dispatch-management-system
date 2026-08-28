@@ -104,7 +104,7 @@ describe('privileged TOTP enrollment', () => {
             countActivePrivileged: async () => 0,
             create: async () => undefined,
           } as never,
-          securityEvents: { append: async () => undefined },
+          auditEvents: { append: async () => undefined },
         }),
       ),
       totp: { verify: () => 1_000 } as never,

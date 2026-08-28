@@ -11,10 +11,12 @@ type Context = { readonly params: Promise<{ readonly userId: string }> };
 
 export async function GET(request: Request, context: Context): Promise<Response> {
   const composition = createApplicationComposition();
-  return withResponseHandler(composition, async ({ request: currentRequest }) => {
+  return withResponseHandler(composition, async ({ request: currentRequest, requestId }) => {
     const { principal } = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.read',
+      requestId,
+      routeTemplate: '/api/users/:userId',
     });
     const userId = publicIdSchema.parse((await context.params).userId);
     return composition.getUser.execute(principal, userId);
@@ -27,6 +29,8 @@ export async function PATCH(request: Request, context: Context): Promise<Respons
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.manage',
+      requestId,
+      routeTemplate: '/api/users/:userId',
     });
     assertSecureJsonMutation({
       request: currentRequest,
@@ -54,6 +58,8 @@ export async function DELETE(request: Request, context: Context): Promise<Respon
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.manage',
+      requestId,
+      routeTemplate: '/api/users/:userId',
     });
     assertSecureJsonMutation({
       request: currentRequest,

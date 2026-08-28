@@ -1,6 +1,7 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { OneTimeCredentialDto } from '@/application/auth/dto/user-administration-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { PasswordHasher } from '@/application/auth/ports/password-hasher';
 import type { SecureTokenGenerator } from '@/application/auth/ports/secure-token-generator';
@@ -63,16 +64,18 @@ export class ResetUserPassword {
         reason: input.reason.trim(),
         createdAt: at,
       });
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.password.reset',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: input.targetPublicId,
-        requestId: input.requestId,
-        reasonCode: 'administrator_reset',
-        metadata: { reason: input.reason.trim() },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.password.reset',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: input.targetPublicId,
+          requestId: input.requestId,
+          reasonCode: 'administrator_reset',
+          metadata: { reason: input.reason.trim() },
+          occurredAt: at,
+        }),
+      );
     });
     return { temporaryPassword, targetPublicId: input.targetPublicId };
   }

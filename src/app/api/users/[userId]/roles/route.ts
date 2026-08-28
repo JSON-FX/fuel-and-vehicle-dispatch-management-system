@@ -14,6 +14,8 @@ export async function PUT(request: Request, context: Context): Promise<Response>
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'role.manage',
+      requestId,
+      routeTemplate: '/api/users/:userId/roles',
     });
     assertSecureJsonMutation({
       request: currentRequest,

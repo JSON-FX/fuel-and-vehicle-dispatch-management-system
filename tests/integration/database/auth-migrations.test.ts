@@ -1,8 +1,10 @@
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
+import { PublicId } from '@/domain/shared/value-objects/public-id';
 import { createMigrator } from '@/infrastructure/database/migrator';
 import type { Database } from '@/infrastructure/database/types';
+import { publicIdToBinary } from '@/infrastructure/database/uuid-binary';
 
 import { createTestDatabase } from '../helpers/test-database';
 
@@ -46,9 +48,9 @@ describe('authentication and RBAC migration', () => {
         'login_rate_limits',
         'user_totp_factors',
         'admin_password_resets',
-        'auth_security_events',
       ]),
     );
+    expect(result.rows.map((row) => row.TABLE_NAME)).not.toContain('auth_security_events');
   });
 
   it('uses binary tokens, encrypted factor fields, and microsecond timestamps', async () => {
@@ -105,9 +107,15 @@ describe('authentication and RBAC migration', () => {
       .select('code')
       .orderBy('code')
       .execute();
-    expect(permissions).toHaveLength(24);
+    expect(permissions).toHaveLength(25);
     expect(permissions.map((permission) => permission.code)).toEqual(
-      expect.arrayContaining(['role.assign_privileged', 'user.totp.reset', 'fuel.void']),
+      expect.arrayContaining([
+        'audit.read',
+        'audit.read_sensitive',
+        'role.assign_privileged',
+        'user.totp.reset',
+        'fuel.void',
+      ]),
     );
 
     const privilegedAssignment = await database
@@ -118,6 +126,129 @@ describe('authentication and RBAC migration', () => {
       .where('permissions.code', '=', 'role.assign_privileged')
       .execute();
     expect(privilegedAssignment).toEqual([{ role_code: 'SUPER_ADMIN' }]);
+
+    const auditAssignments = await database
+      .selectFrom('role_permissions')
+      .innerJoin('roles', 'roles.id', 'role_permissions.role_id')
+      .innerJoin('permissions', 'permissions.id', 'role_permissions.permission_id')
+      .select(['roles.code as role_code', 'permissions.code as permission_code'])
+      .where('permissions.code', 'in', ['audit.read', 'audit.read_sensitive'])
+      .orderBy('permissions.code')
+      .orderBy('roles.code')
+      .execute();
+    expect(auditAssignments).toEqual([
+      { role_code: 'AUDITOR', permission_code: 'audit.read' },
+      { role_code: 'SUPER_ADMIN', permission_code: 'audit.read' },
+      { role_code: 'SYSTEM_ADMIN', permission_code: 'audit.read' },
+      { role_code: 'AUDITOR', permission_code: 'audit.read_sensitive' },
+      { role_code: 'SUPER_ADMIN', permission_code: 'audit.read_sensitive' },
+    ]);
+  });
+
+  it('backfills legacy security events with exact identities and restores them on rollback', async () => {
+    const migrator = createMigrator(database);
+    const rollback = await migrator.migrateDown();
+    expect(rollback.error).toBeUndefined();
+
+    const userPublicId = PublicId.from('01900000-0000-7000-8000-000000000401');
+    const eventPublicId = PublicId.from('01900000-0000-7000-8000-000000000402');
+    await database
+      .insertInto('users')
+      .values({
+        public_id: publicIdToBinary(userPublicId),
+        username: 'migration.auditor',
+        email: 'migration.auditor@example.lan',
+        full_name: 'Migration Auditor',
+        password_hash: 'not-a-real-password-hash',
+        is_active: true,
+        must_change_password: true,
+        deleted_at: null,
+        created_at: new Date('2026-08-28T00:00:00.000Z'),
+        updated_at: new Date('2026-08-28T00:00:00.000Z'),
+      })
+      .execute();
+    const user = await database
+      .selectFrom('users')
+      .select('id')
+      .where('public_id', '=', publicIdToBinary(userPublicId))
+      .executeTakeFirstOrThrow();
+
+    await sql`
+      insert into auth_security_events (
+        public_id,
+        event_type,
+        actor_user_id,
+        target_user_id,
+        request_id,
+        reason_code,
+        metadata,
+        created_at
+      ) values (
+        ${publicIdToBinary(eventPublicId)},
+        'auth.user.updated',
+        ${user.id},
+        ${user.id},
+        'legacy-request-id',
+        'profile_changed',
+        ${JSON.stringify({ changedFields: 2 })},
+        ${new Date('2026-08-28T01:02:03.456Z')}
+      )
+    `.execute(database);
+
+    const reapply = await migrator.migrateToLatest();
+    expect(reapply.error).toBeUndefined();
+
+    const backfilled = await sql<{
+      source_position: string;
+      legacy_security_event_id: string;
+      event_public_id: Buffer;
+      canonical_payload: string;
+      captured_at: Date;
+    }>`
+      select source_position, legacy_security_event_id, event_public_id, canonical_payload, captured_at
+      from fvdms_audit.audit_outbox
+      where event_public_id = ${publicIdToBinary(eventPublicId)}
+    `.execute(database);
+    expect(backfilled.rows).toHaveLength(1);
+    expect(backfilled.rows[0]?.event_public_id).toEqual(publicIdToBinary(eventPublicId));
+    expect(backfilled.rows[0]?.legacy_security_event_id).toBe('1');
+    expect(backfilled.rows[0]?.captured_at.toISOString()).toBe('2026-08-28T01:02:03.456Z');
+
+    const payload = JSON.parse(backfilled.rows[0]!.canonical_payload) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      publicId: eventPublicId.toString(),
+      schemaVersion: 1,
+      action: 'auth.user.updated',
+      actorPublicId: userPublicId.toString(),
+      entity: { type: 'user', publicId: userPublicId.toString() },
+      requestId: 'legacy-request-id',
+      reasonCode: 'profile_changed',
+      metadata: { changedFields: 2 },
+    });
+
+    const rollbackWithData = await migrator.migrateDown();
+    expect(rollbackWithData.error).toBeUndefined();
+    const restored = await sql<{
+      public_id: Buffer;
+      event_type: string;
+      request_id: string;
+      metadata: { changedFields: number };
+    }>`
+      select public_id, event_type, request_id, metadata
+      from auth_security_events
+      where public_id = ${publicIdToBinary(eventPublicId)}
+    `.execute(database);
+    expect(restored.rows).toEqual([
+      {
+        public_id: publicIdToBinary(eventPublicId),
+        event_type: 'auth.user.updated',
+        request_id: 'legacy-request-id',
+        metadata: { changedFields: 2 },
+      },
+    ]);
+
+    const finalReapply = await migrator.migrateToLatest();
+    expect(finalReapply.error).toBeUndefined();
   });
 
   it('enforces normalized user identity and bearer-token uniqueness', async () => {
