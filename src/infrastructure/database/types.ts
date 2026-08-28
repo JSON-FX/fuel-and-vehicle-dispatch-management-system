@@ -150,6 +150,47 @@ export interface AuthSecurityEventsTable {
   created_at: CreatedTimestamp;
 }
 
+export interface OfficesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  office_name: string;
+  abbreviation: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  deleted_at: NullableTimestamp;
+  deleted_by_user_id: string | null;
+  delete_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface DriversTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  full_name: string;
+  contact_no: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  deleted_at: NullableTimestamp;
+  deleted_by_user_id: string | null;
+  delete_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface VehiclesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  model_brand: string;
+  vehicle_type: string;
+  plate_no: string;
+  status: 'SERVICEABLE' | 'UNSERVICEABLE';
+  remarks: string | null;
+  deleted_at: NullableTimestamp;
+  deleted_by_user_id: string | null;
+  delete_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -164,6 +205,9 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   admin_password_resets: AdminPasswordResetsTable;
   /** Migration-only legacy table. Migration 000003 removes it after verified backfill. */
   auth_security_events: AuthSecurityEventsTable;
+  offices: OfficesTable;
+  drivers: DriversTable;
+  vehicles: VehiclesTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

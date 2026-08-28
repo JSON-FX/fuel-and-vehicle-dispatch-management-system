@@ -88,6 +88,31 @@ openssl rand -base64 32
 
 Administrators perform password reset, TOTP reset, session revocation, user lifecycle, and role changes from the protected user and role pages. Reset actions require a reason. Temporary passwords appear once in a persistent acknowledgment dialog.
 
+## Office, driver, and vehicle reference data
+
+Managers maintain dispatch reference data from protected administration pages. The server checks every page and API request independently of navigation visibility.
+
+| Resource | Administration page | API collection  | Manage permission | Selector permission                |
+| -------- | ------------------- | --------------- | ----------------- | ---------------------------------- |
+| Offices  | `/admin/offices`    | `/api/offices`  | `office.manage`   | `office.read` or `office.manage`   |
+| Drivers  | `/admin/drivers`    | `/api/drivers`  | `driver.manage`   | `driver.read` or `driver.manage`   |
+| Vehicles | `/admin/vehicles`   | `/api/vehicles` | `vehicle.manage`  | `vehicle.read` or `vehicle.manage` |
+
+Create and update requests use the resource collection and item routes. Soft delete uses `POST /api/{resource}/{publicId}/soft-delete` with a reason. Restore uses `POST /api/{resource}/{publicId}/restore`.
+
+New offices and drivers begin active. New vehicles begin serviceable. Restored offices and drivers remain inactive until reviewed. Restored vehicles remain unserviceable until reviewed. Deleted names, abbreviations, and plate numbers stay reserved because records are never physically deleted.
+
+Operational selectors use `GET /api/{resource}?mode=operational`. They return only current and eligible records. Driver selector results never include contact numbers. Administration lists default to 25 records per page. All list APIs use bounded cursor pagination with a default of 50 and a maximum of 200.
+
+Validate this module with the standard project commands:
+
+```sh
+pnpm test:unit
+pnpm test:integration
+pnpm exec playwright test --project=chromium tests/e2e/master-data.spec.ts tests/e2e/master-data-permissions.spec.ts tests/e2e/accessibility.spec.ts
+pnpm validate
+```
+
 ## Database operations
 
 The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates its application database, primary audit schema, secondary audit schema, and dedicated accounts.

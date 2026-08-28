@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -19,6 +19,7 @@ type Values = z.infer<typeof schema>;
 
 export function TotpChallengeForm() {
   const router = useRouter();
+  const started = useRef(false);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const {
@@ -29,6 +30,8 @@ export function TotpChallengeForm() {
   } = useForm<Values>({ resolver: zodResolver(schema) });
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     void fetch('/api/auth/challenge', { cache: 'no-store' })
       .then((response) => readApiResponse<{ csrfToken: string }>(response))
       .then((result) => setCsrfToken(result.csrfToken))

@@ -13,12 +13,25 @@ import { NodeSha256AuditHasher } from '@/infrastructure/audit/node-sha256-audit-
 import { Rfc8785AuditCanonicalizer } from '@/infrastructure/audit/rfc8785-audit-canonicalizer';
 import { AesGcmSecretEncryptor } from '@/infrastructure/auth/aes-gcm-secret-encryptor';
 import { Argon2PasswordHasher } from '@/infrastructure/auth/argon2-password-hasher';
+import { Driver } from '@/domain/driver/entities/driver';
+import { DriverContactNumber } from '@/domain/driver/value-objects/driver-contact-number';
+import { DriverName } from '@/domain/driver/value-objects/driver-name';
+import { Office } from '@/domain/office/entities/office';
+import { OfficeAbbreviation } from '@/domain/office/value-objects/office-abbreviation';
+import { OfficeName } from '@/domain/office/value-objects/office-name';
+import { PublicId } from '@/domain/shared/value-objects/public-id';
+import { Vehicle } from '@/domain/vehicle/entities/vehicle';
+import { ModelBrand } from '@/domain/vehicle/value-objects/model-brand';
+import { PlateNumber } from '@/domain/vehicle/value-objects/plate-number';
+import { VehicleRemarks } from '@/domain/vehicle/value-objects/vehicle-remarks';
+import { VehicleType } from '@/domain/vehicle/value-objects/vehicle-type';
 import { createKyselyAuthRepositories } from '@/infrastructure/database/auth/create-kysely-auth-repositories';
 import { KyselyAuthTransaction } from '@/infrastructure/database/auth/kysely-auth-transaction';
 import { KyselyAuditChainRepository } from '@/infrastructure/database/audit/kysely-audit-chain-repository';
 import { KyselyAuditSink } from '@/infrastructure/database/audit/kysely-audit-sink';
 import { KyselyAuditVerificationRepository } from '@/infrastructure/database/audit/kysely-audit-verification-repository';
 import { createDatabaseClient } from '@/infrastructure/database/client';
+import { createKyselyMasterDataRepositories } from '@/infrastructure/database/master-data/create-kysely-master-data-repositories';
 import { createMigrator } from '@/infrastructure/database/migrator';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
 
@@ -77,6 +90,7 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
     const publicIds = new UuidV7Generator();
     const now = new Date();
     const auditReaderRolePublicId = publicIds.generate().toString();
+    const referenceManagerRolePublicId = publicIds.generate().toString();
     await repositories.roles.create({
       publicId: auditReaderRolePublicId,
       code: 'AUDIT_READER',
@@ -84,12 +98,33 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
       isPrivileged: false,
       createdAt: now,
     });
-    const auditRead = (await repositories.permissions.list()).find(
-      (permission) => permission.code === 'audit.read',
-    )!;
+    await repositories.roles.create({
+      publicId: referenceManagerRolePublicId,
+      code: 'REFERENCE_MANAGER',
+      name: 'Reference data manager',
+      isPrivileged: false,
+      createdAt: now,
+    });
+    const permissions = await repositories.permissions.list();
+    const auditRead = permissions.find((permission) => permission.code === 'audit.read')!;
     await repositories.permissions.replaceRolePermissions(
       auditReaderRolePublicId,
       [auditRead.publicId],
+      now,
+    );
+    const referencePermissions = permissions.filter((permission) =>
+      [
+        'office.read',
+        'office.manage',
+        'driver.read',
+        'driver.manage',
+        'vehicle.read',
+        'vehicle.manage',
+      ].includes(permission.code),
+    );
+    await repositories.permissions.replaceRolePermissions(
+      referenceManagerRolePublicId,
+      referencePermissions.map((permission) => permission.publicId),
       now,
     );
     roles = await repositories.roles.list();
@@ -122,6 +157,13 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         email: 'admin.e2e@example.lan',
         name: 'Administrator E2E',
         role: 'SUPER_ADMIN',
+        mustChange: false,
+      },
+      {
+        ...credentials.manager,
+        email: 'reference.manager.e2e@example.lan',
+        name: 'Reference Manager E2E',
+        role: 'REFERENCE_MANAGER',
         mustChange: false,
       },
       {
@@ -179,10 +221,75 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         });
       }
     }
+    await seedMasterData(
+      database,
+      userPublicIds.get(credentials.manager.username)!,
+      publicIds,
+      now,
+    );
     await seedAuditEvidence(database, userPublicIds.get(credentials.auditor.username)!);
   } finally {
     await database.destroy();
   }
+}
+
+async function seedMasterData(
+  database: ReturnType<typeof createDatabaseClient>,
+  actorPublicId: string,
+  publicIds: UuidV7Generator,
+  createdAt: Date,
+): Promise<void> {
+  const repositories = createKyselyMasterDataRepositories(database);
+  const actor = PublicId.from(actorPublicId);
+  const deletedAt = new Date(createdAt.getTime() + 1_000);
+
+  const offices = ['Operations Office', 'Budget Office', 'Archived Office'].map(
+    (name, index) =>
+      new Office({
+        publicId: PublicId.from(publicIds.generate().toString()),
+        name: OfficeName.from(name),
+        abbreviation: OfficeAbbreviation.from(['OPS', 'BUD', 'ARC'][index]!),
+        createdAt,
+        updatedAt: createdAt,
+      }),
+  );
+  const drivers = ['Alex Rivera', 'Casey Santos', 'Archived Driver'].map(
+    (name, index) =>
+      new Driver({
+        publicId: PublicId.from(publicIds.generate().toString()),
+        name: DriverName.from(name),
+        contactNumber: DriverContactNumber.optional(`+63 917 000 10${index}`),
+        createdAt,
+        updatedAt: createdAt,
+      }),
+  );
+  const vehicles = [
+    ['Toyota Hilux', 'Pickup', 'FVD 101'],
+    ['Isuzu N-Series', 'Truck', 'FVD 102'],
+    ['Archived Van', 'Van', 'FVD 103'],
+  ].map(
+    ([modelBrand, vehicleType, plateNumber]) =>
+      new Vehicle({
+        publicId: PublicId.from(publicIds.generate().toString()),
+        modelBrand: ModelBrand.from(modelBrand!),
+        vehicleType: VehicleType.from(vehicleType!),
+        plateNumber: PlateNumber.from(plateNumber!),
+        remarks: VehicleRemarks.optional('Deterministic browser fixture'),
+        createdAt,
+        updatedAt: createdAt,
+      }),
+  );
+
+  for (const office of offices) await repositories.offices.insert(office);
+  for (const driver of drivers) await repositories.drivers.insert(driver);
+  for (const vehicle of vehicles) await repositories.vehicles.insert(vehicle);
+
+  offices[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test office' });
+  drivers[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test driver' });
+  vehicles[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test vehicle' });
+  await repositories.offices.softDelete(offices[2]!);
+  await repositories.drivers.softDelete(drivers[2]!);
+  await repositories.vehicles.softDelete(vehicles[2]!);
 }
 
 async function prepareAuditSchemas(container: StartedMySqlContainer): Promise<void> {

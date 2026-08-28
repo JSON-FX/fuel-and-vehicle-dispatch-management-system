@@ -71,8 +71,11 @@ export class NotFoundError extends ApplicationError {
 }
 
 export class ConflictError extends ApplicationError {
-  constructor(message = 'The request conflicts with the current resource state.') {
-    super('CONFLICT', message, 409);
+  constructor(
+    message = 'The request conflicts with the current resource state.',
+    details: readonly ErrorDetail[] = [],
+  ) {
+    super('CONFLICT', message, 409, details);
   }
 }
 
