@@ -5,7 +5,7 @@ These pages inherit `../MASTER.md`. They cover privileged TOTP enrollment and ch
 ## Shared structure
 
 - Use the compact authentication shell and `max-w-lg` content width.
-- Identify the current step in text. Do not imply that enrollment is optional.
+- Identify the current step in text. When global MFA is enabled, explain that enrollment is required to continue.
 - Provide one primary action and one safe exit action when the flow permits it.
 - Keep all challenge and enrollment responses uncached and absent from browser storage.
 

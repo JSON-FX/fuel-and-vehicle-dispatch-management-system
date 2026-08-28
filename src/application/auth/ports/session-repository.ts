@@ -20,5 +20,6 @@ export interface SessionRepository {
   replaceCsrfTokenHash(publicId: string, csrfTokenHash: Uint8Array): Promise<boolean>;
   revoke(publicId: string, at: Date, reason: string): Promise<boolean>;
   revokeForUser(userPublicId: string, at: Date, reason: string): Promise<number>;
+  revokeAllPrivileged(at: Date, reason: string): Promise<number>;
   listForUser(userPublicId: string): Promise<readonly SessionRecord[]>;
 }

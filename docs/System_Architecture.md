@@ -631,7 +631,7 @@ Recommended:
 - CSRF protection when cookie authentication is used;
 - login throttling and account lockout/rate limiting;
 - mandatory password reset flow for initial credentials;
-- mandatory TOTP MFA for privileged roles before production release;
+- database-backed TOTP MFA that administrators can require globally for privileged roles, disabled by default;
 - idle timeout, absolute session lifetime, and privileged concurrent-session limits;
 - audited admin-assisted password reset/recovery with no external email dependency;
 - session revocation on password/role changes.
@@ -1001,7 +1001,7 @@ Never log:
 14. Maintain database backup, restore, and disaster-recovery procedures.
 15. Use separate dev/staging/production environments.
 16. Protect production migrations with change control and backups.
-17. Enforce secure admin access and mandatory MFA for privileged accounts.
+17. Keep privileged MFA available as a global administrator-controlled setting, disabled by default.
 18. Enforce explicit CSRF protection on every state-changing cookie-authenticated route.
 19. Use opaque public IDs plus object-level authorization on every protected resource endpoint.
 20. Apply RA 10173-aligned personal-data classification, access, retention, redaction, and disposal controls.
@@ -1202,7 +1202,7 @@ This topology deliberately avoids Kubernetes, microservices, and internet-scale 
 - configurable fiscal-year/quarter rules;
 - attachment support for supporting documents;
 - automated backup verification;
-- MFA for privileged roles;
+- globally configurable MFA for privileged roles;
 - anomaly detection for unusually high fuel consumption or impossible odometer sequences.
 
 ---
@@ -1237,7 +1237,7 @@ The external evaluation report identified twelve security findings, nine scalabi
 
 - **SEC-01 Audit-log integrity:** synchronous durable capture, asynchronous hash chaining, separate write-restricted WORM-style sink, periodic cross-verification.
 - **SEC-02 Report/export injection:** sanitize user-controlled spreadsheet cells beginning with `=`, `+`, `-`, or `@`.
-- **SEC-04 Privileged authentication:** mandatory privileged MFA at production release using TOTP.
+- **SEC-04 Privileged authentication:** administrator-controlled TOTP enforcement for privileged roles, disabled by default and changeable without redeployment.
 - **SEC-09 LAN transport:** TLS everywhere using an LGU internal CA.
 
 ### P1 Before UAT Sign-Off

@@ -601,7 +601,7 @@ The production runtime shall use a CLI-managed Ubuntu Server and Docker Compose.
 The application shall have no public internet ingress. All browser-to-proxy and inter-tier traffic shall use TLS through an LGU-managed internal CA. VLAN/firewall segmentation shall isolate client, application, database, and security/operations tiers.
 
 ### NFR-011 Privileged Authentication
-MFA shall be mandatory at production launch for privileged roles. TOTP authenticator applications are the preferred low-cost method.
+MFA shall remain available for privileged roles through a global administrator setting. It shall be disabled by default. TOTP authenticator applications are the preferred low-cost method when enabled.
 
 ### NFR-012 Session Security
 The system shall enforce idle timeout, absolute session lifetime, session revocation/logout, and limits on concurrent privileged sessions.
@@ -900,7 +900,7 @@ Mitigation:
 - secure cookies;
 - TLS;
 - rate limits;
-- mandatory MFA for privileged roles;
+- globally configurable MFA for privileged roles, disabled by default;
 - idle/absolute session limits and privileged concurrent-session controls.
 
 ### Threat: Sensitive data leakage in logs
@@ -952,7 +952,7 @@ The product is acceptable for initial production use when:
 Before production release:
 - P0 SEC-01, SEC-02, SEC-04 and SEC-09 controls are closed.
 - Ubuntu CLI + Docker deployment checklist is complete, including firewall rules, Compose health checks, persistent volumes, backup/restore, and no-public-ingress verification.
-- Audit cross-verification, formula-injection tests, mandatory privileged MFA, and internal-CA TLS are operational.
+- Audit cross-verification, formula-injection tests, configurable privileged MFA, and internal-CA TLS are operational.
 
 Before UAT sign-off:
 - P1 SEC-03 through SEC-12 and SCALE-04 through SCALE-06 controls are closed.
@@ -973,7 +973,7 @@ Before UAT sign-off:
 
 - QR/barcode scanning;
 - anomaly detection;
-- advanced privileged authentication enhancements beyond the mandatory TOTP baseline;
+- advanced privileged authentication enhancements beyond the configurable TOTP baseline;
 - mobile-responsive field workflows;
 - advanced archival/search;
 - data warehouse/analytics integration.
@@ -999,7 +999,7 @@ The implementation must follow these non-negotiable rules:
 - No direct SQL string concatenation from user-provided input.
 - No silent offline conflict resolution for authoritative records.
 - No public internet ingress.
-- No privileged production account without MFA.
+- No change to the global privileged MFA requirement without an authorized and audited administrator action.
 - No state-changing cookie-authenticated endpoint without CSRF protection.
 - No direct authorization based solely on sequential record IDs.
 - No unvalidated/uninspected user file upload.
@@ -1036,7 +1036,7 @@ The attached evaluation report reviewed PRD.md, System_Architecture.md, and Task
 
 - SEC-01: audit chain must be supplemented by a separate write-restricted WORM-style audit sink with periodic cross-verification.
 - SEC-02: XLSX formula-injection sanitization is mandatory.
-- SEC-04: privileged MFA is mandatory at launch.
+- SEC-04: privileged MFA can be enabled globally by an authorized administrator without redeployment.
 - SEC-09: TLS is mandatory across the LAN using an internal CA.
 
 ### P1 UAT / Go-Live Blockers

@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { parseBuildEnvironment } from '@/infrastructure/config/environment';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
 import { createPinoLogger } from '@/infrastructure/logging/pino-logger';
+import { AUTH_SESSION_COOKIE, deleteAuthCookie } from '@/lib/auth/cookies';
 import { resolveRequestId } from '@/lib/http/request-id';
 
 export function proxy(request: NextRequest): NextResponse {
@@ -38,8 +39,15 @@ function routeRequest(request: NextRequest, forwardedHeaders: Headers): NextResp
     return NextResponse.next({ request: { headers: forwardedHeaders } });
   }
 
-  const hasSession = request.cookies.has('__Host-fvdms_session');
+  const hasSession = request.cookies.has(AUTH_SESSION_COOKIE);
   const hasChallenge = request.cookies.has('__Host-fvdms_challenge');
+
+  if (pathname === '/login' && request.nextUrl.searchParams.get('invalidSession') === '1') {
+    const response = NextResponse.next({ request: { headers: forwardedHeaders } });
+    const expired = deleteAuthCookie(AUTH_SESSION_COOKIE);
+    response.cookies.set(expired.name, expired.value, expired.options);
+    return response;
+  }
 
   if (hasSession && authenticationPages.has(pathname)) {
     return redirect(

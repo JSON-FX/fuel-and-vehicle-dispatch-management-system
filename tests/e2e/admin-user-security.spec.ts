@@ -5,7 +5,10 @@ import { credentials, login } from './fixtures/auth';
 test('administrator creates a user and explicitly acknowledges the one-time credential', async ({
   page,
 }) => {
-  await login(page, credentials.administrator);
+  await login(page, {
+    username: credentials.administrator.username,
+    password: credentials.administrator.password,
+  });
   await page.goto('/admin/users');
   await page.getByRole('button', { name: 'Create user' }).click();
   await page.getByLabel('Username').fill('created.e2e');

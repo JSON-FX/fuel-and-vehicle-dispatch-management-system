@@ -25,7 +25,11 @@ const standardUser: UserAuthenticationRecord = {
   mfaEnrolled: false,
 };
 
-function createLogin(user: UserAuthenticationRecord | null, passwordMatches = true) {
+function createLogin(
+  user: UserAuthenticationRecord | null,
+  passwordMatches = true,
+  mfaRequired = true,
+) {
   const sessions: unknown[] = [];
   const challenges: unknown[] = [];
   const repositories = authRepositories({
@@ -56,7 +60,14 @@ function createLogin(user: UserAuthenticationRecord | null, passwordMatches = tr
       clear: async () => undefined,
     } as never,
     auditEvents: { append: async () => undefined },
-  });
+    authenticationSettings: {
+      get: async () => ({
+        mfaRequired,
+        updatedAt: now,
+        updatedByUserPublicId: null,
+      }),
+    },
+  } as never);
   let tokenNumber = 0;
   const login = new Login({
     transaction: new FakeAuthTransaction(repositories),
@@ -82,6 +93,7 @@ function createLogin(user: UserAuthenticationRecord | null, passwordMatches = tr
       standardIdleTimeoutSeconds: 1_800,
       privilegedIdleTimeoutSeconds: 900,
       absoluteTimeoutSeconds: 28_800,
+      privilegedSessionLimit: 1,
       challengeTtlSeconds: 300,
       rateLimitWindowSeconds: 900,
       rateLimitLockSeconds: 900,
@@ -128,6 +140,30 @@ describe('Login', () => {
     expect(challenges).toEqual([
       expect.objectContaining({ type: 'TOTP_ENROLLMENT', userPublicId: standardUser.publicId }),
     ]);
+  });
+
+  it('creates a privileged session without a challenge when MFA is globally disabled', async () => {
+    const { login, sessions, challenges } = createLogin(
+      {
+        ...standardUser,
+        isPrivileged: true,
+        mfaEnrolled: true,
+        roles: ['SYSTEM_ADMIN'],
+      },
+      true,
+      false,
+    );
+
+    const result = await login.execute({
+      username: standardUser.username,
+      password: 'correct password',
+      sourceAddress: '192.0.2.10',
+      requestId: 'request-id',
+    });
+
+    expect(result.next).toBe('AUTHENTICATED');
+    expect(sessions).toEqual([expect.objectContaining({ isPrivileged: true })]);
+    expect(challenges).toHaveLength(0);
   });
 
   it.each([

@@ -140,7 +140,15 @@ describe('authentication workflows', () => {
 
   it('creates forced-password and privileged enrollment challenges without creating sessions', async () => {
     await createUser({ username: 'temporary.user', roleCode: 'VIEWER', mustChangePassword: true });
-    await createUser({ username: 'system.admin', roleCode: 'SYSTEM_ADMIN' });
+    const administratorPublicId = await createUser({
+      username: 'system.admin',
+      roleCode: 'SYSTEM_ADMIN',
+    });
+    await createKyselyAuthRepositories(database).authenticationSettings.update({
+      mfaRequired: true,
+      updatedAt: clock.current,
+      updatedByUserPublicId: administratorPublicId,
+    });
     const login = createLogin();
 
     await expect(
@@ -170,6 +178,22 @@ describe('authentication workflows', () => {
       ).map((row) => row.challenge_type),
     ).toEqual(['PASSWORD_CHANGE', 'TOTP_ENROLLMENT']);
   });
+
+  it('authenticates a privileged user with only a password while MFA is disabled', async () => {
+    await createUser({ username: 'system.admin', roleCode: 'SYSTEM_ADMIN' });
+
+    await expect(
+      createLogin().execute({
+        username: 'system.admin',
+        password: 'CorrectPassword123!',
+        sourceAddress: '192.0.2.32',
+        requestId: 'privileged-without-mfa',
+      }),
+    ).resolves.toMatchObject({
+      next: 'AUTHENTICATED',
+      principal: { isPrivileged: true },
+    });
+  });
 });
 
 function createLogin(): Login {
@@ -185,6 +209,7 @@ function createLogin(): Login {
       standardIdleTimeoutSeconds: 1_800,
       privilegedIdleTimeoutSeconds: 900,
       absoluteTimeoutSeconds: 28_800,
+      privilegedSessionLimit: 1,
       challengeTtlSeconds: 300,
       rateLimitWindowSeconds: 900,
       rateLimitLockSeconds: 900,
@@ -218,6 +243,10 @@ async function createUser(input: {
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
   await sql`delete from fvdms_audit.audit_outbox`.execute(target);
+  await sql`update authentication_settings
+    set mfa_required = false, updated_by_user_id = null, updated_at = '2026-08-28 00:00:00.000000'`.execute(
+    target,
+  );
   for (const table of [
     'admin_password_resets',
     'user_totp_factors',

@@ -14,7 +14,7 @@ export async function getServerAuthentication() {
     const session = await composition.authenticateSession.execute(bearerToken);
     return { composition, session, bearerToken };
   } catch {
-    redirect('/login');
+    redirect('/login?invalidSession=1');
   }
 }
 

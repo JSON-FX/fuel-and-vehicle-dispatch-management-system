@@ -18,6 +18,7 @@ const unavailableRepository = new Proxy(
 export function authRepositories(overrides: Partial<AuthRepositories> = {}): AuthRepositories {
   return {
     users: unavailableRepository,
+    authenticationSettings: unavailableRepository,
     roles: unavailableRepository,
     permissions: unavailableRepository,
     sessions: unavailableRepository,

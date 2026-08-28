@@ -107,11 +107,13 @@ describe('authentication and RBAC migration', () => {
       .select('code')
       .orderBy('code')
       .execute();
-    expect(permissions).toHaveLength(28);
+    expect(permissions).toHaveLength(30);
     expect(permissions.map((permission) => permission.code)).toEqual(
       expect.arrayContaining([
         'audit.read',
         'audit.read_sensitive',
+        'auth.settings.manage',
+        'budget.read',
         'driver.read',
         'office.read',
         'role.assign_privileged',
@@ -150,6 +152,10 @@ describe('authentication and RBAC migration', () => {
 
   it('backfills legacy security events with exact identities and restores them on rollback', async () => {
     const migrator = createMigrator(database);
+    const settingsRollback = await migrator.migrateDown();
+    expect(settingsRollback.error).toBeUndefined();
+    const budgetRollback = await migrator.migrateDown();
+    expect(budgetRollback.error).toBeUndefined();
     const masterDataRollback = await migrator.migrateDown();
     expect(masterDataRollback.error).toBeUndefined();
     const auditRollback = await migrator.migrateDown();
@@ -231,6 +237,10 @@ describe('authentication and RBAC migration', () => {
       metadata: { changedFields: 2 },
     });
 
+    const settingsRollbackWithData = await migrator.migrateDown();
+    expect(settingsRollbackWithData.error).toBeUndefined();
+    const budgetRollbackWithData = await migrator.migrateDown();
+    expect(budgetRollbackWithData.error).toBeUndefined();
     const masterDataRollbackWithData = await migrator.migrateDown();
     expect(masterDataRollbackWithData.error).toBeUndefined();
     const auditRollbackWithData = await migrator.migrateDown();

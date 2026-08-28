@@ -190,11 +190,32 @@ describe('baseline migrations', () => {
     expect(result.rows[0]?.last_record_hash).toEqual(Buffer.alloc(32));
   });
 
-  it('rolls back and reapplies only the latest master-data migration', async () => {
+  it('creates disabled global MFA settings with administration permission', async () => {
+    const settings = await database
+      .selectFrom('authentication_settings')
+      .select(['mfa_required', 'updated_by_user_id'])
+      .executeTakeFirstOrThrow();
+    const assignments = await database
+      .selectFrom('role_permissions')
+      .innerJoin('permissions', 'permissions.id', 'role_permissions.permission_id')
+      .innerJoin('roles', 'roles.id', 'role_permissions.role_id')
+      .select('roles.code')
+      .where('permissions.code', '=', 'auth.settings.manage')
+      .orderBy('roles.code')
+      .execute();
+
+    expect(settings).toEqual({ mfa_required: 0, updated_by_user_id: null });
+    expect(assignments.map((assignment) => assignment.code)).toEqual([
+      'SUPER_ADMIN',
+      'SYSTEM_ADMIN',
+    ]);
+  });
+
+  it('rolls back and reapplies only the latest authentication settings migration', async () => {
     const migrator = createMigrator(database);
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
@@ -215,7 +236,21 @@ describe('baseline migrations', () => {
       where table_schema = database()
         and table_name in ('offices', 'drivers', 'vehicles')
     `.execute(database);
-    expect(masterDataTablesAfterRollback.rows).toEqual([]);
+    expect(masterDataTablesAfterRollback.rows.map((row) => row.TABLE_NAME).sort()).toEqual([
+      'drivers',
+      'offices',
+      'vehicles',
+    ]);
+
+    const latestTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
+      select TABLE_NAME
+      from information_schema.tables
+      where table_schema = database()
+        and table_name in ('budget_allocations', 'authentication_settings')
+    `.execute(database);
+    expect(latestTablesAfterRollback.rows.map((row) => row.TABLE_NAME)).toEqual([
+      'budget_allocations',
+    ]);
 
     const auditTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
       select TABLE_NAME
@@ -229,6 +264,6 @@ describe('baseline migrations', () => {
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(4);
+    ).toHaveLength(6);
   });
 });

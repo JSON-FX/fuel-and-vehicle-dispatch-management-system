@@ -14,6 +14,7 @@ import { CreateInitialSuperAdmin } from '@/application/auth/use-cases/create-ini
 import { CreateUser } from '@/application/auth/use-cases/create-user';
 import { GetCurrentPrincipal } from '@/application/auth/use-cases/get-current-principal';
 import { GetCurrentChallenge } from '@/application/auth/use-cases/get-current-challenge';
+import { GetAuthenticationSettings } from '@/application/auth/use-cases/get-authentication-settings';
 import { GetUser } from '@/application/auth/use-cases/get-user';
 import { GetRole } from '@/application/auth/use-cases/get-role';
 import { ListRoles } from '@/application/auth/use-cases/list-roles';
@@ -29,11 +30,14 @@ import { SoftDeleteUser } from '@/application/auth/use-cases/soft-delete-user';
 import { StartTotpEnrollment } from '@/application/auth/use-cases/start-totp-enrollment';
 import { UpdateRole } from '@/application/auth/use-cases/update-role';
 import { UpdateUser } from '@/application/auth/use-cases/update-user';
+import { UpdateAuthenticationSettings } from '@/application/auth/use-cases/update-authentication-settings';
 import { GetHealthStatus } from '@/application/health/use-cases/get-health-status';
 import type { AuditWebComposition } from '@/infrastructure/composition/audit';
 import { createAuditWebComposition } from '@/infrastructure/composition/audit';
 import type { MasterDataWebComposition } from '@/infrastructure/composition/master-data';
 import { createMasterDataWebComposition } from '@/infrastructure/composition/master-data';
+import type { BudgetWebComposition } from '@/infrastructure/composition/budget';
+import { createBudgetWebComposition } from '@/infrastructure/composition/budget';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PasswordPolicy } from '@/domain/user/value-objects/password-policy';
@@ -54,7 +58,8 @@ import { createPinoLogger } from '@/infrastructure/logging/pino-logger';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=19456,p=1,t=2$s2r5DIVnB+eVyeEK/iQvPQ$t/XFGhEWgUdX+otDbdK8TKnVKv/0KQMpzSQq5DEahaU';
 
-export interface ApplicationComposition extends AuditWebComposition, MasterDataWebComposition {
+export interface ApplicationComposition
+  extends AuditWebComposition, MasterDataWebComposition, BudgetWebComposition {
   readonly getHealthStatus: GetHealthStatus;
   readonly logger: Logger;
   readonly publicIdGenerator: PublicIdGenerator;
@@ -68,6 +73,8 @@ export interface ApplicationComposition extends AuditWebComposition, MasterDataW
   readonly logout: Logout;
   readonly getCurrentPrincipal: GetCurrentPrincipal;
   readonly getCurrentChallenge: GetCurrentChallenge;
+  readonly getAuthenticationSettings: GetAuthenticationSettings;
+  readonly updateAuthenticationSettings: UpdateAuthenticationSettings;
   readonly changePassword: ChangePassword;
   readonly startTotpEnrollment: StartTotpEnrollment;
   readonly confirmTotpEnrollment: ConfirmTotpEnrollment;
@@ -130,6 +137,7 @@ function buildApplicationComposition(
     publicIds,
     clock,
   });
+  const budgetWeb = createBudgetWebComposition(database, auditOptions, { publicIds, clock });
   const sessionPolicy = {
     standardIdleTimeoutSeconds: configuration.auth.standardIdleTimeoutSeconds,
     privilegedIdleTimeoutSeconds: configuration.auth.privilegedIdleTimeoutSeconds,
@@ -151,6 +159,7 @@ function buildApplicationComposition(
   return Object.freeze({
     ...auditWeb,
     ...masterDataWeb,
+    ...budgetWeb,
     getHealthStatus: new GetHealthStatus(
       new KyselyHealthCheckRepository(database, configuration.database.queryTimeoutMs),
     ),
@@ -188,6 +197,12 @@ function buildApplicationComposition(
       authenticateChallenge,
       transaction,
       tokenGenerator,
+    }),
+    getAuthenticationSettings: new GetAuthenticationSettings(repositories.authenticationSettings),
+    updateAuthenticationSettings: new UpdateAuthenticationSettings({
+      transaction,
+      publicIds,
+      clock,
     }),
     changePassword: new ChangePassword({
       ...common,

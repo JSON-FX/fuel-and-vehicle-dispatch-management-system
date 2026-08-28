@@ -64,7 +64,7 @@ Implement browser authentication and server-side authorization as a complete sec
 - Passwords use Argon2id or an approved adaptive hash and never appear in responses or logs.
 - State-changing routes reject missing or invalid Cross-Site Request Forgery tokens.
 - Server-side permission checks protect routes and individual resources.
-- Privileged roles must enroll and pass Time-based One-Time Password multi-factor authentication before production use.
+- Authorized administrators can globally require Time-based One-Time Password multi-factor authentication for privileged roles. The setting is disabled by default.
 - Idle timeout, absolute lifetime, and privileged concurrent-session limits are enforced.
 - Password, role, and status changes revoke affected sessions.
 - Login throttling and lockout controls resist brute-force attempts.

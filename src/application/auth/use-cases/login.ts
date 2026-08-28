@@ -1,9 +1,4 @@
-import type {
-  CurrentPrincipal,
-  LoginCommand,
-  LoginResult,
-} from '@/application/auth/dto/authentication-dtos';
-import { createCurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
+import type { LoginCommand, LoginResult } from '@/application/auth/dto/authentication-dtos';
 import type { AuthRepositories, AuthTransaction } from '@/application/auth/ports/auth-transaction';
 import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
@@ -18,10 +13,13 @@ import {
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { Username } from '@/domain/user/value-objects/username';
 
+import { issueAuthenticatedSession } from '../services/issue-authenticated-session';
+
 export interface LoginPolicy {
   readonly standardIdleTimeoutSeconds: number;
   readonly privilegedIdleTimeoutSeconds: number;
   readonly absoluteTimeoutSeconds: number;
+  readonly privilegedSessionLimit: number;
   readonly challengeTtlSeconds: number;
   readonly rateLimitWindowSeconds: number;
   readonly rateLimitLockSeconds: number;
@@ -115,7 +113,8 @@ export class Login {
         );
         return result;
       }
-      if (user.isPrivileged && !user.mfaEnrolled) {
+      const settings = await repositories.authenticationSettings.get();
+      if (settings.mfaRequired && user.isPrivileged && !user.mfaEnrolled) {
         const result = await this.issueChallenge(
           user,
           'TOTP_ENROLLMENT',
@@ -132,7 +131,7 @@ export class Login {
         );
         return result;
       }
-      if (user.isPrivileged) {
+      if (settings.mfaRequired && user.isPrivileged) {
         const result = await this.issueChallenge(
           user,
           'TOTP_VERIFICATION',
@@ -150,21 +149,13 @@ export class Login {
         return result;
       }
 
-      const bearerToken = this.dependencies.tokenGenerator.generateToken();
-      const csrfToken = this.dependencies.tokenGenerator.generateToken();
-      const absoluteExpiresAt = addSeconds(now, this.dependencies.policy.absoluteTimeoutSeconds);
-      await repositories.sessions.create({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        userPublicId: user.publicId,
-        tokenHash: this.dependencies.tokenGenerator.hashToken(bearerToken),
-        csrfTokenHash: this.dependencies.tokenGenerator.hashToken(csrfToken),
-        isPrivileged: false,
-        createdAt: now,
-        lastSeenAt: now,
-        idleExpiresAt: addSeconds(now, this.dependencies.policy.standardIdleTimeoutSeconds),
-        absoluteExpiresAt,
-        revokedAt: null,
-        revokeReason: null,
+      const result = await issueAuthenticatedSession({
+        repositories,
+        user,
+        tokenGenerator: this.dependencies.tokenGenerator,
+        publicIds: this.dependencies.publicIds,
+        now,
+        ...this.dependencies.policy,
       });
       await this.appendEvent(
         repositories,
@@ -172,14 +163,9 @@ export class Login {
         user.publicId,
         command.requestId,
         now,
-        { privileged: false },
+        { privileged: user.isPrivileged, mfaRequired: settings.mfaRequired },
       );
-
-      return {
-        next: 'AUTHENTICATED',
-        credential: { bearerToken, csrfToken, expiresAt: absoluteExpiresAt },
-        principal: principalFrom(user),
-      };
+      return result;
     });
   }
 
@@ -290,17 +276,4 @@ function normalizeUsername(value: string): string {
 
 function addSeconds(date: Date, seconds: number): Date {
   return new Date(date.getTime() + seconds * 1_000);
-}
-
-function principalFrom(user: UserAuthenticationRecord): CurrentPrincipal {
-  return createCurrentPrincipal({
-    userPublicId: user.publicId,
-    username: user.username,
-    fullName: user.fullName,
-    roles: user.roles,
-    permissions: user.permissions,
-    isPrivileged: user.isPrivileged,
-    mustChangePassword: user.mustChangePassword,
-    mfaEnrolled: user.mfaEnrolled,
-  });
 }

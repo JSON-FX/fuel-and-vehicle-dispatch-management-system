@@ -1,8 +1,8 @@
 # Fuel and Vehicle Dispatch Management System
 
-This repository contains the secure application foundation, account access, and durable audit system for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
+This repository contains the secure application foundation, account access, budget allocation, reference-data, and durable audit systems for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
 
-The current system includes database-backed sessions, forced password replacement, privileged-account TOTP, role-based access control, account administration, and an independently verified audit chain.
+The current system includes database-backed sessions, forced password replacement, optional privileged-account TOTP, role-based access control, account administration, and an independently verified audit chain.
 
 ## Prerequisites
 
@@ -72,7 +72,7 @@ pnpm auth:create-initial-admin:container \
 
 The command generates a temporary password and prints it once. Store or deliver it through an approved secure channel. The administrator must replace it at the first login.
 
-Open [https://fvdms.lan/login](https://fvdms.lan/login) to sign in. Privileged roles must enroll an authenticator before receiving a full session.
+Open [https://fvdms.lan/login](https://fvdms.lan/login) to sign in. Username and password are sufficient while the global MFA requirement remains disabled.
 
 ## Authentication configuration
 
@@ -85,6 +85,8 @@ openssl rand -base64 32
 `AUTH_TOTP_ENCRYPTION_KEYS` is a JSON object keyed by positive version numbers. Keep old keys while factors still use them. Set `AUTH_TOTP_ACTIVE_KEY_VERSION` to the version used for new encryption.
 
 `AUTH_RATE_LIMIT_HMAC_KEY` must be a separate 32-byte key. Neither key may use a `NEXT_PUBLIC_` name or enter client bundles, logs, or source control.
+
+Multi-factor authentication is disabled by default. A `SUPER_ADMIN` or `SYSTEM_ADMIN` can enable it from `/admin/security`. Enabling the setting revokes every active privileged session. Privileged users must then enroll or enter a current authenticator code at their next sign-in. Disabling it preserves existing TOTP factors for later use.
 
 Administrators perform password reset, TOTP reset, session revocation, user lifecycle, and role changes from the protected user and role pages. Reset actions require a reason. Temporary passwords appear once in a persistent acknowledgment dialog.
 
@@ -110,6 +112,58 @@ Validate this module with the standard project commands:
 pnpm test:unit
 pnpm test:integration
 pnpm exec playwright test --project=chromium tests/e2e/master-data.spec.ts tests/e2e/master-data-permissions.spec.ts tests/e2e/accessibility.spec.ts
+pnpm validate
+```
+
+## Budget allocations and fiscal eligibility
+
+Authorized users review allocations at `/budget-allocations` and opaque-ID detail routes.
+Budget Officers use `budget.manage` to create and change allocations. Administrators,
+Budget Officers, PSMD staff, viewers, and auditors receive `budget.read`. The server checks
+these permissions for every page and API request.
+
+The collection endpoint is `/api/budget-allocations`. Item reads and status commands use
+`/api/budget-allocations/{publicId}`. Soft delete uses
+`POST /api/budget-allocations/{publicId}/soft-delete` with a reason. Restore uses
+`POST /api/budget-allocations/{publicId}/restore`.
+
+Every allocation starts as DRAFT. Identity fields include the PPMP number, office, fiscal
+year, and quarter. They remain editable only while the record is DRAFT. The status graph is:
+
+```text
+DRAFT ──> ACTIVE ──> CLOSED
+  │          │
+  └──────────┴─────> CANCELLED
+```
+
+CLOSED and CANCELLED are terminal. Cancellation requires an audit reason. Any current
+status may be soft-deleted with a reason. Restoring a formerly ACTIVE record returns it as
+DRAFT. Restoring DRAFT, CLOSED, or CANCELLED preserves that status. Deleted identity tuples
+stay reserved.
+
+Fiscal eligibility uses the Asia/Manila civil calendar. Fiscal years accept 2000 through
+9999, and quarters accept exactly one through four. An allocation is operational only when
+all four conditions are true:
+
+- The allocation is current and ACTIVE.
+- Its fiscal year and quarter match the effective date.
+- Its linked office is current.
+- Its linked office is ACTIVE.
+
+Operational consumers use
+`GET /api/budget-allocations?mode=operational&effectiveDate=YYYY-MM-DD`. Omitting
+`effectiveDate` uses the current Manila date. Selection is advisory. A downstream posting
+transaction must recheck eligibility before it commits.
+
+Budget allocation mutations and their audit outbox events commit atomically. No allocation
+amount, ceiling, or utilization percentage exists in this module.
+
+Validate the focused module with:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts tests/unit/domain/budget tests/unit/application/budget tests/unit/lib/budget tests/unit/app/api/budget-allocations tests/unit/components/budget-allocation-components.test.ts
+pnpm exec vitest run --config vitest.integration.config.ts tests/integration/budget
+pnpm exec playwright test --project=chromium tests/e2e/budget-allocations.spec.ts tests/e2e/budget-allocation-permissions.spec.ts tests/e2e/accessibility.spec.ts
 pnpm validate
 ```
 
