@@ -211,11 +211,11 @@ describe('baseline migrations', () => {
     ]);
   });
 
-  it('rolls back and reapplies only the latest dispatch workflow migration', async () => {
+  it('rolls back and reapplies only the latest dispatch scheduling migration', async () => {
     const migrator = createMigrator(database);
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(8);
+    ).toHaveLength(9);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
@@ -252,7 +252,9 @@ describe('baseline migrations', () => {
           'fuel_sequence_monthly',
           'fuel_issuances',
           'fuel_ledger_entries',
-          'vehicle_dispatches'
+          'vehicle_dispatches',
+          'dispatch_schedule_settings',
+          'vehicle_dispatch_conflict_overrides'
         )
     `.execute(database);
     expect(latestTablesAfterRollback.rows.map((row) => row.TABLE_NAME).sort()).toEqual([
@@ -261,6 +263,7 @@ describe('baseline migrations', () => {
       'fuel_issuances',
       'fuel_ledger_entries',
       'fuel_sequence_monthly',
+      'vehicle_dispatches',
     ]);
 
     const auditTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
@@ -275,6 +278,6 @@ describe('baseline migrations', () => {
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(8);
+    ).toHaveLength(9);
   });
 });

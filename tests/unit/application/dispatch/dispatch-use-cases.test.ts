@@ -12,13 +12,68 @@ import { UpdateDraftDispatch } from '@/application/dispatch/use-cases/update-dra
 import {
   AuthorizationError,
   BusinessRuleError,
+  DispatchScheduleConflictError,
 } from '@/application/shared/errors/application-error';
 import { DriverStatus } from '@/domain/driver/value-objects/driver-status';
 import { VehicleStatus } from '@/domain/vehicle/value-objects/vehicle-status';
 
-import { command, context, createDraft, createHarness, testAt } from './dispatch-test-helpers';
+import {
+  command,
+  context,
+  createDraft,
+  createHarness,
+  publicId,
+  testAt,
+} from './dispatch-test-helpers';
 
 describe('dispatch use cases', () => {
+  it('requires a current acknowledgment before atomically saving a conflicting draft', async () => {
+    const harness = createHarness();
+    harness.setConflicts([
+      {
+        dispatchPublicId: publicId(806).toString(),
+        conflictType: 'DRIVER_AND_VEHICLE',
+        travelDate: command.travelDate,
+        status: 'DRAFT',
+        destination: 'Regional Medical Center',
+        purpose: 'Existing official travel',
+        driver: { publicId: command.driverPublicId, name: 'Juan Dela Cruz' },
+        vehicle: {
+          publicId: command.vehiclePublicId,
+          plateNumber: 'ABC-123',
+          modelBrand: 'Toyota Hiace',
+          vehicleType: 'Passenger Van',
+        },
+      },
+    ]);
+    const useCase = new CreateDispatch(harness.dependencies);
+    const warning = await useCase
+      .execute({ context, command })
+      .catch((error: DispatchScheduleConflictError) => error);
+
+    expect(warning).toBeInstanceOf(DispatchScheduleConflictError);
+    expect(harness.getDispatch()).toBeNull();
+    const fingerprint = (warning as DispatchScheduleConflictError).context?.fingerprint as string;
+
+    const result = await useCase.execute({
+      context,
+      command: {
+        ...command,
+        conflictOverride: {
+          acknowledged: true,
+          reason: 'Reviewed both schedules and approved the second trip.',
+          fingerprint,
+        },
+      },
+    });
+
+    expect(result.status).toBe('DRAFT');
+    expect(harness.overrideRows).toHaveLength(1);
+    expect(harness.audits.map((event) => event.action)).toEqual([
+      'vehicle_dispatch.created',
+      'vehicle_dispatch.conflict_override_acknowledged',
+    ]);
+  });
   it('creates a draft after locking eligible references in one stable order', async () => {
     const harness = createHarness();
     const result = await new CreateDispatch(harness.dependencies).execute({ context, command });
@@ -69,7 +124,7 @@ describe('dispatch use cases', () => {
 
     expect(result.destination).toBe('Regional Medical Center');
     expect(result.passengerCount).toBe(4);
-    expect(harness.lockOrder).toEqual(['dispatch', 'office', 'driver', 'vehicle']);
+    expect(harness.lockOrder).toEqual(['office', 'driver', 'vehicle', 'dispatch']);
     expect(harness.audits[0]?.action).toBe('vehicle_dispatch.updated');
   });
 
@@ -85,7 +140,7 @@ describe('dispatch use cases', () => {
 
     expect(result.status).toBe('DISPATCHED');
     expect(result.dispatchedAt).toBe(testAt.toISOString());
-    expect(harness.lockOrder).toEqual(['dispatch', 'office', 'driver', 'vehicle']);
+    expect(harness.lockOrder).toEqual(['office', 'driver', 'vehicle', 'dispatch']);
     expect(harness.audits[0]?.action).toBe('vehicle_dispatch.dispatched');
   });
 
@@ -167,5 +222,7 @@ describe('dispatch use cases', () => {
     expect(options.vehicles).toHaveLength(1);
     expect(editOptions.vehicles).toEqual(options.vehicles);
     expect(filters.offices).toEqual(options.offices);
+    expect(filters.drivers).toEqual(options.drivers);
+    expect(filters.vehicles).toEqual(options.vehicles);
   });
 });

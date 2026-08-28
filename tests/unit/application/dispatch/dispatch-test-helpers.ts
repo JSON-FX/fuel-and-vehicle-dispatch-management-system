@@ -1,5 +1,9 @@
 import type { AuditEventInput } from '@/application/audit/dto/audit-event-dtos';
-import type { DispatchReferenceRecord } from '@/application/dispatch/dto/dispatch-dtos';
+import type {
+  DispatchConflictOverrideWriteDto,
+  DispatchReferenceRecord,
+  DispatchScheduleConflictDto,
+} from '@/application/dispatch/dto/dispatch-dtos';
 import type { DispatchRepository } from '@/application/dispatch/ports/dispatch-repository';
 import type { DispatchRepositories } from '@/application/dispatch/ports/dispatch-transaction';
 import type { DispatchUseCaseDependencies } from '@/application/dispatch/ports/dispatch-use-case-dependencies';
@@ -23,6 +27,7 @@ import { ModelBrand } from '@/domain/vehicle/value-objects/model-brand';
 import { PlateNumber } from '@/domain/vehicle/value-objects/plate-number';
 import { VehicleRemarks } from '@/domain/vehicle/value-objects/vehicle-remarks';
 import { VehicleType } from '@/domain/vehicle/value-objects/vehicle-type';
+import { NodeSha256DispatchConflictFingerprinter } from '@/infrastructure/dispatch/node-sha256-dispatch-conflict-fingerprinter';
 
 export const publicId = (value: number) =>
   PublicId.from(`01900000-0000-7000-8000-${String(value).padStart(12, '0')}`);
@@ -40,6 +45,7 @@ export const context = {
       'dispatch.update',
       'dispatch.complete',
       'dispatch.cancel',
+      'dispatch.conflict.override',
     ],
     isPrivileged: false,
     mustChangePassword: false,
@@ -67,11 +73,13 @@ export interface DispatchHarness {
   readonly repositories: DispatchRepositories;
   readonly lockOrder: string[];
   readonly audits: AuditEventInput[];
+  readonly overrideRows: DispatchConflictOverrideWriteDto[];
   readonly office: Office;
   readonly driver: Driver;
   readonly vehicle: Vehicle;
   setDispatch(dispatch: VehicleDispatch): void;
   getDispatch(): VehicleDispatch | null;
+  setConflicts(conflicts: readonly DispatchScheduleConflictDto[]): void;
 }
 
 export function createDraft(): VehicleDispatch {
@@ -95,6 +103,8 @@ export function createDraft(): VehicleDispatch {
 export function createHarness(): DispatchHarness {
   const lockOrder: string[] = [];
   const audits: AuditEventInput[] = [];
+  const overrideRows: DispatchConflictOverrideWriteDto[] = [];
+  let conflicts: readonly DispatchScheduleConflictDto[] = [];
   const office = new Office({
     publicId: publicId(802),
     name: OfficeName.from('Provincial Services Office'),
@@ -230,6 +240,54 @@ export function createHarness(): DispatchHarness {
 
   const repositories: DispatchRepositories = {
     dispatches,
+    dispatchSchedules: {
+      async findAdvisoryConflicts() {
+        return conflicts;
+      },
+      async findCurrentConflictsForShare() {
+        return conflicts;
+      },
+      async listSchedule() {
+        return { events: [], truncated: false };
+      },
+      async getOccupancy() {
+        return [];
+      },
+    },
+    dispatchConflictOverrides: {
+      async appendMany(rows) {
+        overrideRows.push(...rows);
+      },
+      async hasMatchingEvidence() {
+        return false;
+      },
+      async listForDispatch() {
+        return [];
+      },
+    },
+    dispatchScheduleSettings: {
+      async get() {
+        return {
+          policy: 'WARN_AND_ACK',
+          updatedByActorPublicId: null,
+          updatedAt: '2026-08-29T00:00:00.000Z',
+        };
+      },
+      async getForShare() {
+        return {
+          policy: 'WARN_AND_ACK',
+          updatedByActorPublicId: null,
+          updatedAt: '2026-08-29T00:00:00.000Z',
+        };
+      },
+      async update(input) {
+        return {
+          policy: input.policy,
+          updatedByActorPublicId: input.updatedByActorPublicId,
+          updatedAt: input.updatedAt.toISOString(),
+        };
+      },
+    },
     offices,
     drivers,
     vehicles,
@@ -249,6 +307,7 @@ export function createHarness(): DispatchHarness {
     permissions: new DispatchPermissionPolicy(),
     publicIds: { generate: () => publicId(nextPublicId++) },
     clock: { now: () => testAt },
+    conflictFingerprints: new NodeSha256DispatchConflictFingerprinter(),
   };
 
   return {
@@ -256,6 +315,7 @@ export function createHarness(): DispatchHarness {
     repositories,
     lockOrder,
     audits,
+    overrideRows,
     office,
     driver,
     vehicle,
@@ -264,6 +324,9 @@ export function createHarness(): DispatchHarness {
     },
     getDispatch() {
       return current;
+    },
+    setConflicts(nextConflicts) {
+      conflicts = nextConflicts;
     },
   };
 }

@@ -23,6 +23,14 @@ export class DispatchPermissionPolicy {
     return principal.permissions.includes('dispatch.cancel');
   }
 
+  canOverrideConflict(principal: CurrentPrincipal): boolean {
+    return principal.permissions.includes('dispatch.conflict.override');
+  }
+
+  canManageSettings(principal: CurrentPrincipal): boolean {
+    return principal.permissions.includes('dispatch.settings.manage');
+  }
+
   assertCanCreate(principal: CurrentPrincipal): void {
     if (!this.canCreate(principal)) throw new AuthorizationError();
   }
@@ -45,5 +53,13 @@ export class DispatchPermissionPolicy {
   assertCanCancel(principal: CurrentPrincipal, dispatch?: VehicleDispatch): void {
     void dispatch;
     if (!this.canCancel(principal)) throw new AuthorizationError();
+  }
+
+  assertCanOverrideConflict(principal: CurrentPrincipal): void {
+    if (!this.canOverrideConflict(principal)) throw new AuthorizationError();
+  }
+
+  assertCanManageSettings(principal: CurrentPrincipal): void {
+    if (!this.canManageSettings(principal)) throw new AuthorizationError();
   }
 }

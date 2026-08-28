@@ -5,8 +5,12 @@ import {
   completeDispatchSchema,
   createDispatchSchema,
   dispatchPublicIdSchema,
+  dispatchVehicleSchema,
   emptyDispatchBodySchema,
+  parseDispatchConflictQuery,
   parseDispatchListQuery,
+  parseDispatchScheduleQuery,
+  updateDispatchScheduleSettingsSchema,
   updateDispatchSchema,
 } from '@/lib/dispatch/route-schemas';
 
@@ -30,6 +34,38 @@ describe('dispatch route schemas', () => {
     });
     expect(() => createDispatchSchema.parse({ ...draft, status: 'DISPATCHED' })).toThrow();
     expect(() => updateDispatchSchema.parse({ ...draft, odoAfter: '1260.4' })).toThrow();
+  });
+
+  it('accepts only reviewed reason and fingerprint as conflict evidence', () => {
+    const conflictOverride = {
+      acknowledged: true,
+      reason: ' Reviewed   both schedules and approved the trip. ',
+      fingerprint: 'a'.repeat(64),
+    };
+    expect(createDispatchSchema.parse({ ...draft, conflictOverride })).toMatchObject({
+      conflictOverride: {
+        acknowledged: true,
+        reason: 'Reviewed both schedules and approved the trip.',
+        fingerprint: 'a'.repeat(64),
+      },
+    });
+    expect(dispatchVehicleSchema.parse({ conflictOverride })).toMatchObject({
+      conflictOverride: {
+        ...conflictOverride,
+        reason: 'Reviewed both schedules and approved the trip.',
+      },
+    });
+    expect(() =>
+      createDispatchSchema.parse({
+        ...draft,
+        conflictOverride: { ...conflictOverride, policy: 'WARN_AND_ACK' },
+      }),
+    ).toThrow();
+    expect(() =>
+      dispatchVehicleSchema.parse({
+        conflictOverride: { ...conflictOverride, conflictingDispatchIds: [draft.driverPublicId] },
+      }),
+    ).toThrow();
   });
 
   it('validates civil dates, exact odometers, and passenger counts', () => {
@@ -79,6 +115,41 @@ describe('dispatch route schemas', () => {
     expect(() => parseDispatchListQuery({ pageSize: '201' })).toThrow();
     expect(() =>
       parseDispatchListQuery({ travelDateFrom: '2026-09-01', travelDateTo: '2026-08-31' }),
+    ).toThrow();
+  });
+
+  it('parses strict advisory and bounded schedule queries', () => {
+    expect(
+      parseDispatchConflictQuery({
+        travelDate: '2026-08-29',
+        driverPublicId: draft.driverPublicId,
+        vehiclePublicId: draft.vehiclePublicId,
+      }),
+    ).toEqual({
+      travelDate: '2026-08-29',
+      driverPublicId: draft.driverPublicId,
+      vehiclePublicId: draft.vehiclePublicId,
+      excludedDispatchPublicId: null,
+    });
+    expect(
+      parseDispatchScheduleQuery({ from: '2026-08-01', to: '2026-09-11', limit: '200' }),
+    ).toMatchObject({ from: '2026-08-01', to: '2026-09-11', limit: 200 });
+    expect(() => parseDispatchScheduleQuery({ from: '2026-08-01', to: '2026-09-12' })).toThrow();
+    expect(() =>
+      parseDispatchConflictQuery({
+        travelDate: ['2026-08-29', '2026-08-30'],
+        driverPublicId: draft.driverPublicId,
+        vehiclePublicId: draft.vehiclePublicId,
+      }),
+    ).toThrow();
+    expect(updateDispatchScheduleSettingsSchema.parse({ policy: 'BLOCK' })).toEqual({
+      policy: 'BLOCK',
+    });
+    expect(() =>
+      updateDispatchScheduleSettingsSchema.parse({
+        policy: 'BLOCK',
+        officePublicId: draft.driverPublicId,
+      }),
     ).toThrow();
   });
 });

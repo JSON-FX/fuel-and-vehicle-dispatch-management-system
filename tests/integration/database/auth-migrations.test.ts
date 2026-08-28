@@ -107,7 +107,7 @@ describe('authentication and RBAC migration', () => {
       .select('code')
       .orderBy('code')
       .execute();
-    expect(permissions).toHaveLength(30);
+    expect(permissions).toHaveLength(32);
     expect(permissions.map((permission) => permission.code)).toEqual(
       expect.arrayContaining([
         'audit.read',
@@ -120,6 +120,8 @@ describe('authentication and RBAC migration', () => {
         'user.totp.reset',
         'vehicle.read',
         'fuel.void',
+        'dispatch.conflict.override',
+        'dispatch.settings.manage',
       ]),
     );
 
@@ -152,6 +154,8 @@ describe('authentication and RBAC migration', () => {
 
   it('backfills legacy security events with exact identities and restores them on rollback', async () => {
     const migrator = createMigrator(database);
+    const schedulingRollback = await migrator.migrateDown();
+    expect(schedulingRollback.error).toBeUndefined();
     const dispatchRollback = await migrator.migrateDown();
     expect(dispatchRollback.error).toBeUndefined();
     const fuelRollback = await migrator.migrateDown();
@@ -241,6 +245,8 @@ describe('authentication and RBAC migration', () => {
       metadata: { changedFields: 2 },
     });
 
+    const schedulingRollbackWithData = await migrator.migrateDown();
+    expect(schedulingRollbackWithData.error).toBeUndefined();
     const dispatchRollbackWithData = await migrator.migrateDown();
     expect(dispatchRollbackWithData.error).toBeUndefined();
     const fuelRollbackWithData = await migrator.migrateDown();

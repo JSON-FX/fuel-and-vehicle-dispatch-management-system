@@ -12,15 +12,20 @@ export class GetDispatchFilterOptions {
   }): Promise<DispatchFilterOptionsDto> {
     this.dependencies.permissions.assertCanRead(input.context.principal);
     return this.dependencies.transaction.execute(async (repositories) => {
-      const offices = await repositories.offices.listOperational({
+      const query = {
         mode: 'operational',
         query: null,
         lifecycle: 'current',
         status: null,
         cursor: null,
         pageSize: 200,
-      });
-      return { offices: offices.items };
+      } as const;
+      const [offices, drivers, vehicles] = await Promise.all([
+        repositories.offices.listOperational(query),
+        repositories.drivers.listOperational(query),
+        repositories.vehicles.listOperational(query),
+      ]);
+      return { offices: offices.items, drivers: drivers.items, vehicles: vehicles.items };
     });
   }
 }

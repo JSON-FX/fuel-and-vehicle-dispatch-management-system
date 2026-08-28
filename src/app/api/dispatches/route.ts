@@ -2,6 +2,7 @@ import { createApplicationComposition } from '@/infrastructure/composition/root'
 import { assertSecureJsonMutation, parseJsonBody } from '@/lib/auth/route-helpers';
 import {
   authenticateDispatchRequest,
+  authorizeDispatchRequestAccess,
   dispatchRequestContext,
 } from '@/lib/dispatch/server-dispatch-access';
 import {
@@ -49,9 +50,20 @@ export async function POST(request: Request): Promise<Response> {
         csrfTokenHash: authenticated.csrfTokenHash,
         tokenGenerator: composition.secureTokenGenerator,
       });
+      const command = createDispatchSchema.parse(await parseJsonBody(currentRequest));
+      if (command.conflictOverride !== undefined) {
+        await authorizeDispatchRequestAccess(
+          currentRequest,
+          composition,
+          authenticated.principal,
+          'override',
+          requestId,
+          '/api/dispatches',
+        );
+      }
       return composition.createDispatch.execute({
         context: dispatchRequestContext(currentRequest, authenticated.principal, requestId),
-        command: createDispatchSchema.parse(await parseJsonBody(currentRequest)),
+        command,
       });
     },
     { status: 201 },

@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   Route,
   Shield,
+  SlidersHorizontal,
   Users,
   WalletCards,
   type LucideIcon,
@@ -39,6 +40,7 @@ export interface ProtectedNavigationAccess {
   readonly audit: boolean;
   readonly budget: boolean;
   readonly dispatch: boolean;
+  readonly dispatchSettings: boolean;
   readonly drivers: boolean;
   readonly fuel: boolean;
   readonly offices: boolean;
@@ -388,6 +390,13 @@ function createNavigationGroups(access: ProtectedNavigationAccess): readonly Nav
         access.users ? { href: '/admin/users', icon: Users, label: 'Users' } : null,
         access.roles ? { href: '/admin/roles', icon: Shield, label: 'Roles' } : null,
         access.security ? { href: '/admin/security', icon: LockKeyhole, label: 'Security' } : null,
+        access.dispatchSettings
+          ? {
+              href: '/admin/dispatch-settings',
+              icon: SlidersHorizontal,
+              label: 'Dispatch settings',
+            }
+          : null,
       ]),
     },
     {

@@ -18,7 +18,10 @@ export class GetDispatch {
       const record = await repositories.dispatches.findByPublicId(input.publicId);
       if (record === null) throw new NotFoundError();
       this.dependencies.permissions.assertCanRead(input.context.principal, record.dispatch);
-      return toDispatchDetailDto(record);
+      const conflictAcknowledgments = await repositories.dispatchConflictOverrides.listForDispatch(
+        input.publicId,
+      );
+      return { ...toDispatchDetailDto(record), conflictAcknowledgments };
     });
   }
 }

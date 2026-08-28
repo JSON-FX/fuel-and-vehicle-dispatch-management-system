@@ -81,6 +81,8 @@ test.describe.serial('fuel issuance lifecycle', () => {
     await expect(
       page.getByText('Duplicate dispatch record entered during browser verification.'),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   test('balance summary reconciles the issuance and void adjustment', async ({ page }) => {

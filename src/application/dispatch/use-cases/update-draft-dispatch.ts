@@ -9,6 +9,7 @@ import {
   buildDispatchAuditEvent,
   dispatchAuditSnapshot,
 } from '@/application/dispatch/services/dispatch-audit-events';
+import { DispatchConflictResolutionService } from '@/application/dispatch/services/dispatch-conflict-resolution';
 import {
   asDispatchBusinessRule,
   assertOperationalDriver,
@@ -34,11 +35,6 @@ export class UpdateDraftDispatch {
     const at = this.dependencies.clock.now();
 
     return this.dependencies.transaction.execute(async (repositories) => {
-      const dispatch = await repositories.dispatches.findByPublicIdForUpdate(input.publicId);
-      if (dispatch === null) throw new NotFoundError();
-      this.dependencies.permissions.assertCanUpdate(input.context.principal, dispatch);
-      const before = dispatchAuditSnapshot(dispatch);
-
       const office = await repositories.offices.findCurrentByPublicIdForUpdate(
         details.requestingOfficePublicId.toString(),
       );
@@ -55,8 +51,39 @@ export class UpdateDraftDispatch {
       if (vehicle === null) throw new NotFoundError();
       assertOperationalVehicle(vehicle);
 
+      const dispatch = await repositories.dispatches.findByPublicIdForUpdate(input.publicId);
+      if (dispatch === null) throw new NotFoundError();
+      this.dependencies.permissions.assertCanUpdate(input.context.principal, dispatch);
+      const before = dispatchAuditSnapshot(dispatch);
+
+      const scheduleSettings = await repositories.dispatchScheduleSettings.getForShare();
+      const candidate = {
+        travelDate: details.travelDate.toString(),
+        driverPublicId: details.driverPublicId.toString(),
+        vehiclePublicId: details.vehiclePublicId.toString(),
+        excludedDispatchPublicId: dispatch.publicId.toString(),
+      };
+      const conflicts =
+        await repositories.dispatchSchedules.findCurrentConflictsForShare(candidate);
+      const resolution = await new DispatchConflictResolutionService({
+        permissions: this.dependencies.permissions,
+        fingerprints: this.dependencies.conflictFingerprints,
+        publicIds: this.dependencies.publicIds,
+      }).resolve({
+        context: input.context,
+        candidate,
+        settings: scheduleSettings,
+        conflicts,
+        command: input.command.conflictOverride,
+        dispatchPublicId: dispatch.publicId.toString(),
+        allowExistingEvidence: false,
+        overrides: repositories.dispatchConflictOverrides,
+        at,
+      });
+
       asDispatchBusinessRule(() => dispatch.updateDetails(details, at));
       await repositories.dispatches.updateDetails(dispatch);
+      await repositories.dispatchConflictOverrides.appendMany(resolution.overrideRows);
       await repositories.auditEvents.append(
         buildDispatchAuditEvent({
           publicId: this.dependencies.publicIds.generate().toString(),
@@ -71,6 +98,9 @@ export class UpdateDraftDispatch {
           after: dispatchAuditSnapshot(dispatch),
         }),
       );
+      if (resolution.auditEvent !== null) {
+        await repositories.auditEvents.append(resolution.auditEvent);
+      }
       return toDispatchDetailDto({
         dispatch,
         requestingOffice: dispatchOfficeDto(office),

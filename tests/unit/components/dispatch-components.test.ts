@@ -90,7 +90,7 @@ describe('dispatch interface components', () => {
       }),
     );
     for (const label of [
-      'Destination, purpose, driver, vehicle, or office',
+      'Search dispatches',
       'Status',
       'Requesting office',
       'Travel date from',
@@ -101,6 +101,7 @@ describe('dispatch interface components', () => {
     expect(html).toContain('method="get"');
     expect(html).toContain('<option value="DISPATCHED" selected="">Dispatched</option>');
     expect(html).toContain('value="hospital"');
+    expect(html).toContain('placeholder="Destination, purpose, driver, vehicle, or office"');
   });
 
   it('renders complete desktop and mobile result content', () => {
@@ -119,6 +120,8 @@ describe('dispatch interface components', () => {
       );
     }
     expect(html).toContain('aria-label="Vehicle dispatch results"');
+    expect(html).toContain('lg:block');
+    expect(html).toContain('lg:hidden');
   });
 
   it('renders five labeled form sections and exact numeric input modes', () => {
@@ -179,6 +182,8 @@ describe('dispatch interface components', () => {
       }),
     );
     expect(draft).toContain('Edit draft');
+    expect(draft).toContain('Schedule conflict acknowledgments');
+    expect(draft).toContain('No conflict acknowledgments');
     expect(draft).toContain('Dispatch vehicle');
     expect(draft).toContain('Cancel dispatch');
     expect(draft).not.toContain('Complete dispatch');

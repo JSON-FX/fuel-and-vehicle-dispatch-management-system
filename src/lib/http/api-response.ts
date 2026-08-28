@@ -1,4 +1,7 @@
-import type { ErrorDetail } from '@/application/shared/errors/application-error';
+import type {
+  ApplicationErrorContext,
+  ErrorDetail,
+} from '@/application/shared/errors/application-error';
 
 export interface ApiSuccessEnvelope<T> {
   readonly success: true;
@@ -12,6 +15,7 @@ export interface ApiErrorEnvelope {
     readonly code: string;
     readonly message: string;
     readonly details: readonly ErrorDetail[];
+    readonly context?: ApplicationErrorContext;
   };
   readonly requestId: string;
 }
@@ -28,7 +32,12 @@ export function createSuccessResponse<T>(
 }
 
 export function createErrorResponse(
-  error: { code: string; message: string; details?: readonly ErrorDetail[] },
+  error: {
+    code: string;
+    message: string;
+    details?: readonly ErrorDetail[];
+    context?: ApplicationErrorContext | undefined;
+  },
   requestId: string,
   init: ResponseInit,
 ): Response {
@@ -42,6 +51,7 @@ export function createErrorResponse(
         code: error.code,
         message: error.message,
         details: error.details ?? [],
+        ...(error.context === undefined ? {} : { context: error.context }),
       },
       requestId,
     },

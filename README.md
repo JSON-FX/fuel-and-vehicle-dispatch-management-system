@@ -217,9 +217,16 @@ dispatch them. Completion requires `dispatch.complete`. Cancellation requires th
 `dispatch.cancel` permission.
 
 The collection API is `/api/dispatches`. Item reads and complete draft replacements use
-`/api/dispatches/{publicId}`. The lifecycle actions are:
+`/api/dispatches/{publicId}`. Schedule and availability APIs are:
 
-- `POST /api/dispatches/{publicId}/dispatch` with an empty JSON object.
+- `GET /api/dispatches/conflicts` for advisory driver and vehicle availability.
+- `GET /api/dispatches/schedule` for a bounded general schedule.
+- `GET /api/drivers/{publicId}/schedule` and `/api/vehicles/{publicId}/schedule` for resource calendars.
+- `GET` and `PATCH /api/dispatch-schedule-settings` for authorized global policy administration.
+
+The lifecycle actions are:
+
+- `POST /api/dispatches/{publicId}/dispatch` with `{}` or strict conflict acknowledgment evidence.
 - `POST /api/dispatches/{publicId}/complete` with the final odometer as a decimal string.
 - `POST /api/dispatches/{publicId}/cancel` with a 10-to-500-character reason.
 
@@ -243,16 +250,37 @@ Completion records an exact final odometer. Initial and final readings use `DECI
 remain decimal strings through the browser, API, domain, and database. Distance is derived with
 exact decimal subtraction and is never persisted.
 
-FVD-007 does not enforce travel-date ordering or odometer continuity across separate records.
-Driver and vehicle schedule conflicts, availability warnings, trip start and end capture, and
-conflict overrides remain deferred to FVD-008. Migration
-`20260828_000008_create_dispatch_workflow` includes nullable future travel-time columns and
-schedule-supporting indexes without persisting a conflict result.
+FVD-008 treats DRAFT, DISPATCHED, and COMPLETED records as same-day reservations. CANCELLED
+records release their resources. The rule is deliberately conservative because trip start and
+end times remain unset. A later interval-scheduling change can replace same-day matching without
+changing the conflict-policy boundary.
+
+The schedule is available at `/dispatches/schedule` in day, Monday-to-Sunday week, and six-row
+month views. Native GET parameters hold the date, view, office, driver, vehicle, and status.
+Views return at most 200 records across no more than 42 inclusive dates. Resource occupancy is
+calculated separately, so a truncated event list never produces a false `Available` state.
+
+The global policy is managed at `/admin/dispatch-settings` by users with
+`dispatch.settings.manage`. `WARN_AND_ACK` is the default. It lets users with
+`dispatch.conflict.override` proceed only after reviewing current conflicts and recording a
+10-to-500-character reason. `BLOCK` rejects every conflict and cannot be bypassed by an old or
+edited acknowledgment. Dispatch Officers and Super Administrators initially receive override
+permission. System Administrators and Super Administrators initially receive settings permission.
+
+Advisory availability never authorizes a write. Create, draft update, and dispatch transition
+commands lock the selected resources, read the current global policy, and query conflicts again
+inside one MySQL transaction. A changed fingerprint returns the latest conflict summary for a
+new review. A retry-required concurrency response means the transaction rolled back safely;
+reload the schedule and submit again.
+
+Migration `20260829_000009_create_dispatch_scheduling` stores the singleton policy and append-only
+conflict evidence. Dispatch details show this history without treating older evidence as a current
+override. The migration leaves the future travel-time columns null and unexposed.
 
 Validate the focused module with:
 
 ```sh
-pnpm exec vitest run --config vitest.config.ts tests/unit/domain/dispatch tests/unit/application/dispatch tests/unit/lib/dispatch tests/unit/app/api/dispatches tests/unit/components/dispatch-components.test.ts
+pnpm exec vitest run --config vitest.config.ts tests/unit/domain/dispatch tests/unit/application/dispatch tests/unit/lib/dispatch tests/unit/app/api/dispatches tests/unit/components/dispatch-components.test.ts tests/unit/components/dispatch-schedule-components.test.ts
 pnpm exec vitest run --config vitest.integration.config.ts tests/integration/dispatch
 pnpm exec playwright test --project=chromium tests/e2e/dispatches.spec.ts tests/e2e/dispatch-permissions.spec.ts tests/e2e/accessibility.spec.ts
 pnpm validate

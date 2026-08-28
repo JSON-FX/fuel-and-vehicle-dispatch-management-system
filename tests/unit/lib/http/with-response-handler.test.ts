@@ -4,11 +4,31 @@ import { CsrfError } from '@/application/shared/errors/application-error';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PublicId } from '@/domain/shared/value-objects/public-id';
+import { DispatchScheduleConflictError } from '@/application/shared/errors/application-error';
 import { withResponseHandler } from '@/lib/http/with-response-handler';
 
 const requestId = '019c043f-422c-7141-8a03-a9d9bda3544a';
 
 describe('withResponseHandler', () => {
+  it('returns allowlisted conflict context in the standard error envelope', async () => {
+    const context = {
+      policy: 'BLOCK' as const,
+      canOverride: false,
+      fingerprint: 'b'.repeat(64),
+      conflicts: [],
+    };
+    const handler = withResponseHandler(dependencies(), async () => {
+      throw new DispatchScheduleConflictError(context);
+    });
+
+    const response = await handler(new Request('https://fvdms.lan/api/dispatches'));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: { code: 'DISPATCH_SCHEDULE_CONFLICT', context },
+    });
+  });
   it('returns a no-store success envelope for plain data', async () => {
     const handler = withResponseHandler(dependencies(), async () => ({ next: 'AUTHENTICATED' }));
 

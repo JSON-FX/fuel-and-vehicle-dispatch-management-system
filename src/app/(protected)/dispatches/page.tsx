@@ -1,4 +1,4 @@
-import { Route, SearchX } from 'lucide-react';
+import { CalendarDays, Route, SearchX } from 'lucide-react';
 import Link from 'next/link';
 
 import { ValidationError } from '@/application/shared/errors/application-error';
@@ -55,11 +55,18 @@ export default async function DispatchesPage({
         title="Vehicle dispatches"
         description="Prepare assignments, dispatch vehicles, and preserve exact completion or cancellation evidence."
         action={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/dispatches/new">New dispatch</Link>
+          <div className="flex flex-col gap-2 lg:flex-row">
+            <Button asChild variant="outline">
+              <Link href="/dispatches/schedule">
+                <CalendarDays aria-hidden="true" /> Schedule
+              </Link>
             </Button>
-          ) : undefined
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/dispatches/new">New dispatch</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <DispatchFilterForm values={parsed.values} offices={filterOptions.offices} />

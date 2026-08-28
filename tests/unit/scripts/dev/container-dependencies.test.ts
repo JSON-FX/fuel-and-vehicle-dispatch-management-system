@@ -6,6 +6,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('container dependency recovery', () => {
+  it('makes the pinned Corepack package available to the runtime container user', () => {
+    const dockerfile = readFileSync(join(process.cwd(), 'Dockerfile'), 'utf8');
+
+    expect(dockerfile).toContain('ENV COREPACK_HOME=/opt/corepack');
+    expect(dockerfile).toContain('chown -R node:node "$COREPACK_HOME"');
+  });
+
   it('allows pnpm to replace a stale named-volume install without a terminal', () => {
     const configured = execFileSync('pnpm', ['config', 'get', 'confirmModulesPurge'], {
       cwd: process.cwd(),

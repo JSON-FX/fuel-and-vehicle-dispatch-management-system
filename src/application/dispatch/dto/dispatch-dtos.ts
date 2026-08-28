@@ -3,6 +3,8 @@ import type { DriverOperationalOptionDto } from '@/application/driver/dto/driver
 import type { OfficeOperationalOptionDto } from '@/application/office/dto/office-dtos';
 import type { VehicleOperationalOptionDto } from '@/application/vehicle/dto/vehicle-dtos';
 import type { VehicleDispatch } from '@/domain/dispatch/entities/vehicle-dispatch';
+import type { DispatchConflictPolicyValue } from '@/domain/dispatch/value-objects/dispatch-conflict-policy';
+import type { DispatchConflictTypeValue } from '@/domain/dispatch/value-objects/dispatch-conflict-type';
 import type { DispatchStatusValue } from '@/domain/dispatch/value-objects/dispatch-status';
 
 export interface DispatchRequestContext {
@@ -52,6 +54,7 @@ export interface DispatchDetailDto {
   readonly cancellationReason: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly conflictAcknowledgments?: readonly DispatchConflictOverrideHistoryDto[];
 }
 
 export interface DispatchReferenceRecord {
@@ -90,6 +93,7 @@ export interface DispatchDetailsCommand {
   readonly purpose: string;
   readonly odoBefore: string;
   readonly passengerCount: number;
+  readonly conflictOverride?: DispatchConflictOverrideCommand | undefined;
 }
 
 export type CreateDispatchCommand = DispatchDetailsCommand;
@@ -99,8 +103,131 @@ export interface CompleteDispatchCommand {
   readonly odoAfter: string;
 }
 
+export interface DispatchVehicleCommand {
+  readonly conflictOverride?: DispatchConflictOverrideCommand | undefined;
+}
+
 export interface CancelDispatchCommand {
   readonly reason: string;
+}
+
+export interface DispatchConflictOverrideCommand {
+  readonly acknowledged: true;
+  readonly reason: string;
+  readonly fingerprint: string;
+}
+
+export interface DispatchScheduleCandidateDto {
+  readonly travelDate: string;
+  readonly driverPublicId: string;
+  readonly vehiclePublicId: string;
+  readonly excludedDispatchPublicId: string | null;
+}
+
+export interface DispatchScheduleConflictDto {
+  readonly dispatchPublicId: string;
+  readonly conflictType: DispatchConflictTypeValue;
+  readonly travelDate: string;
+  readonly status: DispatchStatusValue;
+  readonly destination: string;
+  readonly purpose: string;
+  readonly driver: DispatchDriverDto;
+  readonly vehicle: DispatchVehicleDto;
+}
+
+export interface DispatchScheduleConflictContextDto {
+  readonly policy: DispatchConflictPolicyValue;
+  readonly canOverride: boolean;
+  readonly fingerprint: string;
+  readonly conflicts: readonly DispatchScheduleConflictDto[];
+}
+
+export interface DispatchConflictFingerprintInputDto {
+  readonly schemaVersion: 1;
+  readonly policy: DispatchConflictPolicyValue;
+  readonly settingsUpdatedAt: string;
+  readonly candidate: DispatchScheduleCandidateDto;
+  readonly conflicts: readonly Pick<
+    DispatchScheduleConflictDto,
+    'dispatchPublicId' | 'conflictType'
+  >[];
+}
+
+export interface DispatchScheduleSettingsDto {
+  readonly policy: DispatchConflictPolicyValue;
+  readonly updatedByActorPublicId: string | null;
+  readonly updatedAt: string;
+}
+
+export interface UpdateDispatchScheduleSettingsCommand {
+  readonly policy: DispatchConflictPolicyValue;
+}
+
+export type DispatchScheduleView = 'day' | 'week' | 'month';
+
+export interface DispatchScheduleQuery {
+  readonly from: string;
+  readonly to: string;
+  readonly requestingOfficePublicId: string | null;
+  readonly driverPublicId: string | null;
+  readonly vehiclePublicId: string | null;
+  readonly status: DispatchStatusValue | null;
+  readonly limit: number;
+}
+
+export interface DispatchScheduleEventDto {
+  readonly dispatchPublicId: string;
+  readonly travelDate: string;
+  readonly status: DispatchStatusValue;
+  readonly destination: string;
+  readonly purpose: string;
+  readonly driver: DispatchDriverDto;
+  readonly vehicle: DispatchVehicleDto;
+  readonly requestingOffice: DispatchOfficeDto;
+}
+
+export interface DispatchResourceOccupancyDto {
+  readonly resourceType: 'DRIVER' | 'VEHICLE';
+  readonly resourcePublicId: string;
+  readonly travelDate: string;
+  readonly dispatchCount: number;
+  readonly hasConflict: boolean;
+}
+
+export interface DispatchScheduleResultDto {
+  readonly from: string;
+  readonly to: string;
+  readonly events: readonly DispatchScheduleEventDto[];
+  readonly occupancy: readonly DispatchResourceOccupancyDto[];
+  readonly truncated: boolean;
+}
+
+export interface DispatchConflictOverrideWriteDto {
+  readonly publicId: string;
+  readonly dispatchPublicId: string;
+  readonly conflictingDispatchPublicId: string;
+  readonly conflictType: DispatchConflictTypeValue;
+  readonly policy: DispatchConflictPolicyValue;
+  readonly reason: string;
+  readonly acknowledgedByActorPublicId: string;
+  readonly acknowledgedAt: string;
+}
+
+export interface DispatchConflictEvidenceQueryDto {
+  readonly dispatchPublicId: string;
+  readonly conflictingDispatchPublicId: string;
+  readonly conflictType: DispatchConflictTypeValue;
+}
+
+export interface DispatchConflictOverrideHistoryDto {
+  readonly publicId: string;
+  readonly conflictingDispatchPublicId: string;
+  readonly conflictingDispatchLabel: string;
+  readonly conflictType: DispatchConflictTypeValue;
+  readonly policy: DispatchConflictPolicyValue;
+  readonly reason: string;
+  readonly acknowledgedByActorPublicId: string;
+  readonly acknowledgedAt: string;
 }
 
 export interface DispatchPreparationOptionsDto {
@@ -111,6 +238,8 @@ export interface DispatchPreparationOptionsDto {
 
 export interface DispatchFilterOptionsDto {
   readonly offices: readonly OfficeOperationalOptionDto[];
+  readonly drivers: readonly DriverOperationalOptionDto[];
+  readonly vehicles: readonly VehicleOperationalOptionDto[];
 }
 
 export function toDispatchDetailDto(record: DispatchReferenceRecord): DispatchDetailDto {

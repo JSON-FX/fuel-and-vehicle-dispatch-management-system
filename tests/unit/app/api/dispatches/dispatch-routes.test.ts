@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   assertCanUpdate: vi.fn(),
   assertCanComplete: vi.fn(),
   assertCanCancel: vi.fn(),
+  assertCanOverrideConflict: vi.fn(),
   recordDenial: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@/infrastructure/composition/root', () => ({
       assertCanUpdate: mocks.assertCanUpdate,
       assertCanComplete: mocks.assertCanComplete,
       assertCanCancel: mocks.assertCanCancel,
+      assertCanOverrideConflict: mocks.assertCanOverrideConflict,
     },
     listDispatches: { execute: mocks.list },
     createDispatch: { execute: mocks.create },
@@ -120,6 +122,25 @@ describe('dispatch Route Handlers', () => {
     );
     expect(response.status).toBe(400);
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('requires exact override permission before forwarding conflict acknowledgment evidence', async () => {
+    mocks.create.mockResolvedValue({ publicId: dispatchId, status: 'DRAFT' });
+    const conflictOverride = {
+      acknowledged: true,
+      reason: 'Reviewed the shared schedule and approved the second trip.',
+      fingerprint: 'a'.repeat(64),
+    } as const;
+
+    const response = await POST(
+      mutationRequest('POST', '/api/dispatches', { ...draft, conflictOverride }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.assertCanOverrideConflict).toHaveBeenCalledWith(principal);
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ command: expect.objectContaining({ conflictOverride }) }),
+    );
   });
 
   it('gets historical detail and forwards complete draft replacements', async () => {
