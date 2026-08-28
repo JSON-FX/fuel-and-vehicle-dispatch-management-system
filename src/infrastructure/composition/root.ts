@@ -40,6 +40,8 @@ import type { BudgetWebComposition } from '@/infrastructure/composition/budget';
 import { createBudgetWebComposition } from '@/infrastructure/composition/budget';
 import type { FuelWebComposition } from '@/infrastructure/composition/fuel';
 import { createFuelWebComposition } from '@/infrastructure/composition/fuel';
+import type { DispatchWebComposition } from '@/infrastructure/composition/dispatch';
+import { createDispatchWebComposition } from '@/infrastructure/composition/dispatch';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PasswordPolicy } from '@/domain/user/value-objects/password-policy';
@@ -61,7 +63,12 @@ const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=19456,p=1,t=2$s2r5DIVnB+eVyeEK/iQvPQ$t/XFGhEWgUdX+otDbdK8TKnVKv/0KQMpzSQq5DEahaU';
 
 export interface ApplicationComposition
-  extends AuditWebComposition, MasterDataWebComposition, BudgetWebComposition, FuelWebComposition {
+  extends
+    AuditWebComposition,
+    MasterDataWebComposition,
+    BudgetWebComposition,
+    FuelWebComposition,
+    DispatchWebComposition {
   readonly getHealthStatus: GetHealthStatus;
   readonly logger: Logger;
   readonly publicIdGenerator: PublicIdGenerator;
@@ -141,6 +148,7 @@ function buildApplicationComposition(
   });
   const budgetWeb = createBudgetWebComposition(database, auditOptions, { publicIds, clock });
   const fuelWeb = createFuelWebComposition(database, auditOptions, { publicIds, clock });
+  const dispatchWeb = createDispatchWebComposition(database, auditOptions, { publicIds, clock });
   const sessionPolicy = {
     standardIdleTimeoutSeconds: configuration.auth.standardIdleTimeoutSeconds,
     privilegedIdleTimeoutSeconds: configuration.auth.privilegedIdleTimeoutSeconds,
@@ -164,6 +172,7 @@ function buildApplicationComposition(
     ...masterDataWeb,
     ...budgetWeb,
     ...fuelWeb,
+    ...dispatchWeb,
     getHealthStatus: new GetHealthStatus(
       new KyselyHealthCheckRepository(database, configuration.database.queryTimeoutMs),
     ),

@@ -97,6 +97,7 @@ describe('budget allocation migration', () => {
 
   it('rolls back and reapplies only migration 000005 beneath later migrations', async () => {
     const migrator = createMigrator(database);
+    await database.deleteFrom('vehicle_dispatches').execute();
     await database.deleteFrom('budget_allocations').execute();
     await database.deleteFrom('offices').where('abbreviation', '=', 'MIGSAFE').execute();
     await database
@@ -113,6 +114,8 @@ describe('budget allocation migration', () => {
         updated_at: new Date('2026-08-28T09:30:00.000Z'),
       })
       .execute();
+    const dispatchRollback = await migrator.migrateDown();
+    expect(dispatchRollback.error).toBeUndefined();
     const fuelRollback = await migrator.migrateDown();
     expect(fuelRollback.error).toBeUndefined();
     const settingsRollback = await migrator.migrateDown();

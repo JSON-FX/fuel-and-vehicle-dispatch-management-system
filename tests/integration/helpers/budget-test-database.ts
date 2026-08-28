@@ -15,6 +15,7 @@ export async function prepareBudgetDatabase(database: Kysely<Database>): Promise
 
 export async function resetBudgetDatabase(database: Kysely<Database>): Promise<void> {
   await database.withSchema('fvdms_audit').deleteFrom('audit_outbox').execute();
+  await database.deleteFrom('vehicle_dispatches').execute();
   await database.deleteFrom('fuel_ledger_entries').execute();
   await database.deleteFrom('fuel_issuances').execute();
   await database.deleteFrom('fuel_sequence_monthly').execute();

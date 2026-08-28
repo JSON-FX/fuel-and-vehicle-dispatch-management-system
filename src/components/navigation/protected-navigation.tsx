@@ -13,6 +13,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Route,
   Shield,
   Users,
   WalletCards,
@@ -37,6 +38,7 @@ import { cn } from '@/lib/utils';
 export interface ProtectedNavigationAccess {
   readonly audit: boolean;
   readonly budget: boolean;
+  readonly dispatch: boolean;
   readonly drivers: boolean;
   readonly fuel: boolean;
   readonly offices: boolean;
@@ -363,6 +365,7 @@ function createNavigationGroups(access: ProtectedNavigationAccess): readonly Nav
     {
       label: 'Operations',
       items: compactItems([
+        access.dispatch ? { href: '/dispatches', icon: Route, label: 'Vehicle dispatches' } : null,
         access.fuel ? { href: '/fuel-issuances', icon: Fuel, label: 'Fuel issuances' } : null,
         access.budget
           ? { href: '/budget-allocations', icon: WalletCards, label: 'Budget allocations' }

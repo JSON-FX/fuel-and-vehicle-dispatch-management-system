@@ -243,6 +243,7 @@ async function createUser(input: {
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
   await sql`delete from fvdms_audit.audit_outbox`.execute(target);
+  await sql`delete from vehicle_dispatches`.execute(target);
   await sql`delete from fuel_ledger_entries`.execute(target);
   await sql`delete from fuel_issuances`.execute(target);
   await sql`delete from fuel_sequence_monthly`.execute(target);
