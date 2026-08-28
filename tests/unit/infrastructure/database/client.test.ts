@@ -36,6 +36,12 @@ const processEnvironment = {
   DATABASE_QUERY_TIMEOUT_MS: '50',
   MIGRATION_DATABASE_USER: 'fvdms_migrator',
   MIGRATION_DATABASE_PASSWORD: 'migration-password',
+  AUTH_ALLOWED_ORIGIN: 'https://fvdms.lan',
+  AUTH_TOTP_ACTIVE_KEY_VERSION: '1',
+  AUTH_TOTP_ENCRYPTION_KEYS: JSON.stringify({
+    1: Buffer.alloc(32, 1).toString('base64'),
+  }),
+  AUTH_RATE_LIMIT_HMAC_KEY: Buffer.alloc(32, 2).toString('base64'),
 };
 
 afterEach(async () => {

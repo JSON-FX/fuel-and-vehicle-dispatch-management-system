@@ -8,4 +8,4 @@ docker compose -f "$infrastructure_compose" up -d traefik mysql
 cd "$project_root"
 pnpm db:bootstrap
 pnpm db:migrate
-docker compose up -d app
+docker compose up -d --wait app

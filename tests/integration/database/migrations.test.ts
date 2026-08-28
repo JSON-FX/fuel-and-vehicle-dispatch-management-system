@@ -95,21 +95,26 @@ describe('baseline migrations', () => {
     ).rejects.toThrow();
   });
 
-  it('tracks, rolls back, and reapplies the baseline migration', async () => {
+  it('rolls back and reapplies only the latest authentication migration', async () => {
     const migrator = createMigrator(database);
-    expect((await migrator.getMigrations())[0]?.executedAt).toBeInstanceOf(Date);
+    expect(
+      (await migrator.getMigrations()).filter((migration) => migration.executedAt),
+    ).toHaveLength(2);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
-    const afterRollback = await sql<{ count: string }>`
-      select count(*) as count
+    const afterRollback = await sql<{ TABLE_NAME: string }>`
+      select TABLE_NAME
       from information_schema.tables
-      where table_schema = database() and table_name = 'application_metadata'
+      where table_schema = database()
+        and table_name in ('application_metadata', 'users')
     `.execute(database);
-    expect(afterRollback.rows[0]?.count).toBe('0');
+    expect(afterRollback.rows.map((row) => row.TABLE_NAME)).toEqual(['application_metadata']);
 
     const reapply = await migrator.migrateToLatest();
     expect(reapply.error).toBeUndefined();
-    expect((await migrator.getMigrations())[0]?.executedAt).toBeInstanceOf(Date);
+    expect(
+      (await migrator.getMigrations()).filter((migration) => migration.executedAt),
+    ).toHaveLength(2);
   });
 });

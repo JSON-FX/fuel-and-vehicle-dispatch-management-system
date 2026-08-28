@@ -28,6 +28,74 @@ describe('PinoLogger', () => {
     expect(entry.authorization).toBe('[Redacted]');
   });
 
+  it('redacts nested authentication credentials and encrypted secret material', () => {
+    let output = '';
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        output += chunk.toString();
+        callback();
+      },
+    });
+    const logger = createPinoLogger({ destination });
+
+    logger.info('auth.request', {
+      request: {
+        body: {
+          password: 'current-secret',
+          newPassword: 'replacement-secret',
+          totpCode: '123456',
+        },
+        cookies: {
+          sessionToken: 'session-secret',
+          challengeToken: 'challenge-secret',
+        },
+      },
+      result: {
+        temporaryPassword: 'one-time-secret',
+        csrfToken: 'csrf-secret',
+        enrollmentUri: 'otpauth://totp/secret',
+        encryptedSecret: {
+          ciphertext: 'ciphertext-secret',
+          authenticationTag: 'tag-secret',
+          iv: 'iv-secret',
+        },
+      },
+    });
+
+    const entry = JSON.parse(output) as Record<string, unknown>;
+    expect(JSON.stringify(entry)).not.toContain('current-secret');
+    expect(JSON.stringify(entry)).not.toContain('replacement-secret');
+    expect(JSON.stringify(entry)).not.toContain('123456');
+    expect(JSON.stringify(entry)).not.toContain('session-secret');
+    expect(JSON.stringify(entry)).not.toContain('challenge-secret');
+    expect(JSON.stringify(entry)).not.toContain('one-time-secret');
+    expect(JSON.stringify(entry)).not.toContain('csrf-secret');
+    expect(JSON.stringify(entry)).not.toContain('otpauth://');
+    expect(JSON.stringify(entry)).not.toContain('ciphertext-secret');
+    expect(JSON.stringify(entry)).toContain('[Redacted]');
+  });
+
+  it('redacts sensitive enumerable properties from logged errors', () => {
+    let output = '';
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        output += chunk.toString();
+        callback();
+      },
+    });
+    const logger = createPinoLogger({ destination });
+    const error = Object.assign(new Error('Authentication failed.'), {
+      bearerToken: 'error-token',
+      details: { passwordHash: 'error-hash' },
+    });
+
+    logger.error('auth.failure', error);
+
+    expect(output).not.toContain('error-token');
+    expect(output).not.toContain('error-hash');
+    expect(output).toContain('Authentication failed.');
+  });
+
   it('supports every level, error serialization, and child context', () => {
     let output = '';
     const destination = new Writable({

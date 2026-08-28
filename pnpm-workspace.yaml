@@ -1,4 +1,7 @@
+confirmModulesPurge: false
+
 allowBuilds:
+  argon2: true
   cpu-features: true
   esbuild: true
   protobufjs: true

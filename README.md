@@ -1,8 +1,8 @@
 # Fuel and Vehicle Dispatch Management System
 
-This repository contains the secure application foundation for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
+This repository contains the secure application foundation and account-access system for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
 
-The current foundation includes a database-aware health endpoint. Authentication, audit trails, dispatch workflows, dashboards, and production operations are deferred to later tickets.
+The current system includes database-backed sessions, forced password replacement, privileged-account TOTP, role-based access control, account administration, and append-only authentication security events.
 
 ## Prerequisites
 
@@ -50,6 +50,44 @@ pnpm dev:down
 
 This command does not stop shared Traefik, dnsmasq, or MySQL.
 
+## Create the initial administrator
+
+Apply all migrations before creating the first administrator. The command refuses to run after an active `SUPER_ADMIN` exists.
+
+```sh
+pnpm auth:create-initial-admin \
+  --full-name "System Administrator" \
+  --username system.admin \
+  --email system.admin@example.lan
+```
+
+When the application container is already running, use:
+
+```sh
+pnpm auth:create-initial-admin:container \
+  --full-name "System Administrator" \
+  --username system.admin \
+  --email system.admin@example.lan
+```
+
+The command generates a temporary password and prints it once. Store or deliver it through an approved secure channel. The administrator must replace it at the first login.
+
+Open [https://fvdms.lan/login](https://fvdms.lan/login) to sign in. Privileged roles must enroll an authenticator before receiving a full session.
+
+## Authentication configuration
+
+The accepted local defaults are documented in `.env.example` and supplied by `compose.yaml`. Generate independent encryption and HMAC keys for every non-local environment:
+
+```sh
+openssl rand -base64 32
+```
+
+`AUTH_TOTP_ENCRYPTION_KEYS` is a JSON object keyed by positive version numbers. Keep old keys while factors still use them. Set `AUTH_TOTP_ACTIVE_KEY_VERSION` to the version used for new encryption.
+
+`AUTH_RATE_LIMIT_HMAC_KEY` must be a separate 32-byte key. Neither key may use a `NEXT_PUBLIC_` name or enter client bundles, logs, or source control.
+
+Administrators perform password reset, TOTP reset, session revocation, user lifecycle, and role changes from the protected user and role pages. Reset actions require a reason. Temporary passwords appear once in a persistent acknowledgment dialog.
+
 ## Database operations
 
 The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates only its database and two least-privilege users.
@@ -82,6 +120,15 @@ pnpm test:integration
 ```
 
 Integration tests start their own `mysql:8.4.11` Testcontainer. They never use the shared local database.
+
+Install Chromium once, then run the isolated browser suite:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:e2e -- --project=chromium
+```
+
+The browser setup starts its own MySQL 8.4.11 container and Next.js process on `http://localhost:3100`. It does not read or mutate the shared local database.
 
 Run coverage or the complete validation suite:
 
@@ -142,6 +189,8 @@ docker compose -f /Users/jsonse/Documents/development/infra/docker-compose.yml r
 
 Do not copy, mount, print, or commit the shared certificate private key. Firefox may require the separate trust step described by the shared infrastructure guide.
 
-## Deferred work
+## Security scope and non-goals
 
-FVD-001 does not implement authentication, authorization policies, audit records, dispatch features, fleet dashboards, or production deployment procedures. Later tickets must add those capabilities within the boundaries above.
+FVDMS stores only hashes of browser session, challenge, and CSRF tokens. TOTP secrets use versioned AES-256-GCM encryption. Authentication responses use `Cache-Control: no-store`, exact-origin checks, synchronizer CSRF tokens, generic credential failures, and durable account/source throttles.
+
+This ticket does not provide self-service email recovery, SMS recovery, single sign-on, trusted-device bypasses, production secret distribution, or production deployment automation. Dispatch workflows, audit-reporting features, and operational dashboards remain separate tickets.
