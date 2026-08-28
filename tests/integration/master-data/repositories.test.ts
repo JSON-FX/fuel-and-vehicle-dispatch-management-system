@@ -44,6 +44,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await database.deleteFrom('budget_allocations').execute();
   await database.deleteFrom('vehicles').execute();
   await database.deleteFrom('drivers').execute();
   await database.deleteFrom('offices').execute();

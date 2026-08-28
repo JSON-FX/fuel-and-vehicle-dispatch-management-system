@@ -107,10 +107,28 @@ describe('master-data migration', () => {
     );
   });
 
-  it('rolls back and reapplies only migration 000004', async () => {
+  it('preserves migration 000004 when rolling back 000005, then reapplies both', async () => {
     const migrator = createMigrator(database);
-    const rollback = await migrator.migrateDown();
-    expect(rollback.error).toBeUndefined();
+    const settingsRollback = await migrator.migrateDown();
+    expect(settingsRollback.error).toBeUndefined();
+    const budgetRollback = await migrator.migrateDown();
+    expect(budgetRollback.error).toBeUndefined();
+
+    const afterBudgetRollback = await sql<{ TABLE_NAME: string }>`
+      select TABLE_NAME
+      from information_schema.tables
+      where table_schema = database()
+        and table_name in ('offices', 'drivers', 'vehicles', 'budget_allocations')
+      order by TABLE_NAME
+    `.execute(database);
+    expect(afterBudgetRollback.rows.map((row) => row.TABLE_NAME)).toEqual([
+      'drivers',
+      'offices',
+      'vehicles',
+    ]);
+
+    const masterDataRollback = await migrator.migrateDown();
+    expect(masterDataRollback.error).toBeUndefined();
 
     const afterRollback = await sql<{ TABLE_NAME: string }>`
       select TABLE_NAME

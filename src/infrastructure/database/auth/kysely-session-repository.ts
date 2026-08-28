@@ -117,6 +117,18 @@ export class KyselySessionRepository implements SessionRepository {
     return Number(result.numUpdatedRows);
   }
 
+  async revokeAllPrivileged(at: Date, reason: string): Promise<number> {
+    const result = await this.database
+      .updateTable('user_sessions')
+      .set({ revoked_at: at, revoke_reason: reason })
+      .where('is_privileged', '=', 1)
+      .where('revoked_at', 'is', null)
+      .where('idle_expires_at', '>', at)
+      .where('absolute_expires_at', '>', at)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows);
+  }
+
   async listForUser(userPublicId: string): Promise<readonly SessionRecord[]> {
     const userId = await resolveUserId(this.database, userPublicId);
     const tokenRows = await this.database

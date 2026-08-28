@@ -18,6 +18,8 @@ export const credentials = {
   viewer: { username: 'viewer.e2e', password: 'ViewerPassword123!' },
   auditor: { username: 'auditor.e2e', password: 'AuditorPassword123!' },
   auditReader: { username: 'audit.reader.e2e', password: 'AuditReaderPassword123!' },
+  budgetOfficer: { username: 'budget.officer.e2e', password: 'BudgetOfficer123!' },
+  psmd: { username: 'psmd.e2e', password: 'PsmdStaffPassword123!' },
 } as const;
 
 export async function login(

@@ -50,6 +50,11 @@ describe('application composition', () => {
     expect(composition.secureTokenGenerator.generateToken).toBeTypeOf('function');
     expect(composition.authAllowedOrigin).toBe('https://fvdms.lan');
     expect(composition.logger.info).toBeTypeOf('function');
+    expect(composition.budgetPermissions.canRead).toBeTypeOf('function');
+    expect(composition.fiscalPeriodPolicy.resolveCivilDate('2026-08-28')).toEqual({
+      fiscalYear: 2026,
+      quarter: 3,
+    });
 
     expect(
       [
@@ -89,6 +94,9 @@ describe('application composition', () => {
         composition.listOperationalDriverOptions,
         composition.createVehicle,
         composition.listOperationalVehicleOptions,
+        composition.createBudgetAllocation,
+        composition.listOperationalBudgetAllocations,
+        composition.restoreBudgetAllocation,
       ].every((service) => typeof service.execute === 'function'),
     ).toBe(true);
   });

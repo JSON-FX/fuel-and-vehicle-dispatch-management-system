@@ -103,6 +103,13 @@ export interface AuthenticationChallengesTable {
   created_at: CreatedTimestamp;
 }
 
+export interface AuthenticationSettingsTable {
+  id: number;
+  mfa_required: DatabaseBoolean;
+  updated_by_user_id: string | null;
+  updated_at: UpdatedTimestamp;
+}
+
 export interface LoginRateLimitsTable {
   id: Generated<string>;
   bucket_type: 'ACCOUNT' | 'SOURCE' | 'TOTP';
@@ -191,6 +198,21 @@ export interface VehiclesTable {
   updated_at: UpdatedTimestamp;
 }
 
+export interface BudgetAllocationsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  ppmp_number: string;
+  office_id: string;
+  quarter: number;
+  fiscal_year: number;
+  status: 'DRAFT' | 'ACTIVE' | 'CLOSED' | 'CANCELLED';
+  deleted_at: NullableTimestamp;
+  deleted_by_user_id: string | null;
+  delete_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -200,6 +222,7 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   role_permissions: RolePermissionsTable;
   user_sessions: UserSessionsTable;
   authentication_challenges: AuthenticationChallengesTable;
+  authentication_settings: AuthenticationSettingsTable;
   login_rate_limits: LoginRateLimitsTable;
   user_totp_factors: UserTotpFactorsTable;
   admin_password_resets: AdminPasswordResetsTable;
@@ -208,6 +231,7 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   offices: OfficesTable;
   drivers: DriversTable;
   vehicles: VehiclesTable;
+  budget_allocations: BudgetAllocationsTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

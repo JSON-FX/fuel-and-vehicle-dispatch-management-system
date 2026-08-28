@@ -13,12 +13,19 @@ import { NodeSha256AuditHasher } from '@/infrastructure/audit/node-sha256-audit-
 import { Rfc8785AuditCanonicalizer } from '@/infrastructure/audit/rfc8785-audit-canonicalizer';
 import { AesGcmSecretEncryptor } from '@/infrastructure/auth/aes-gcm-secret-encryptor';
 import { Argon2PasswordHasher } from '@/infrastructure/auth/argon2-password-hasher';
+import { BudgetAllocation } from '@/domain/budget/entities/budget-allocation';
+import { ManilaFiscalPeriodPolicy } from '@/domain/budget/policies/manila-fiscal-period-policy';
+import { BudgetAllocationStatus } from '@/domain/budget/value-objects/budget-allocation-status';
+import { FiscalYear } from '@/domain/budget/value-objects/fiscal-year';
+import { PpmpNumber } from '@/domain/budget/value-objects/ppmp-number';
+import { Quarter } from '@/domain/budget/value-objects/quarter';
 import { Driver } from '@/domain/driver/entities/driver';
 import { DriverContactNumber } from '@/domain/driver/value-objects/driver-contact-number';
 import { DriverName } from '@/domain/driver/value-objects/driver-name';
 import { Office } from '@/domain/office/entities/office';
 import { OfficeAbbreviation } from '@/domain/office/value-objects/office-abbreviation';
 import { OfficeName } from '@/domain/office/value-objects/office-name';
+import { OfficeStatus } from '@/domain/office/value-objects/office-status';
 import { PublicId } from '@/domain/shared/value-objects/public-id';
 import { Vehicle } from '@/domain/vehicle/entities/vehicle';
 import { ModelBrand } from '@/domain/vehicle/value-objects/model-brand';
@@ -31,6 +38,7 @@ import { KyselyAuditChainRepository } from '@/infrastructure/database/audit/kyse
 import { KyselyAuditSink } from '@/infrastructure/database/audit/kysely-audit-sink';
 import { KyselyAuditVerificationRepository } from '@/infrastructure/database/audit/kysely-audit-verification-repository';
 import { createDatabaseClient } from '@/infrastructure/database/client';
+import { createKyselyBudgetRepositories } from '@/infrastructure/database/budget/create-kysely-budget-repositories';
 import { createKyselyMasterDataRepositories } from '@/infrastructure/database/master-data/create-kysely-master-data-repositories';
 import { createMigrator } from '@/infrastructure/database/migrator';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
@@ -187,6 +195,20 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         role: 'AUDIT_READER',
         mustChange: false,
       },
+      {
+        ...credentials.budgetOfficer,
+        email: 'budget.officer.e2e@example.lan',
+        name: 'Budget Officer E2E',
+        role: 'BUDGET_OFFICER',
+        mustChange: false,
+      },
+      {
+        ...credentials.psmd,
+        email: 'psmd.e2e@example.lan',
+        name: 'PSMD Staff E2E',
+        role: 'PSMD_STAFF',
+        mustChange: false,
+      },
     ];
     const userPublicIds = new Map<string, string>();
     for (const input of users) {
@@ -221,9 +243,16 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         });
       }
     }
-    await seedMasterData(
+    const offices = await seedMasterData(
       database,
       userPublicIds.get(credentials.manager.username)!,
+      publicIds,
+      now,
+    );
+    await seedBudgetAllocations(
+      database,
+      offices,
+      userPublicIds.get(credentials.budgetOfficer.username)!,
       publicIds,
       now,
     );
@@ -238,7 +267,7 @@ async function seedMasterData(
   actorPublicId: string,
   publicIds: UuidV7Generator,
   createdAt: Date,
-): Promise<void> {
+): Promise<readonly Office[]> {
   const repositories = createKyselyMasterDataRepositories(database);
   const actor = PublicId.from(actorPublicId);
   const deletedAt = new Date(createdAt.getTime() + 1_000);
@@ -284,12 +313,71 @@ async function seedMasterData(
   for (const driver of drivers) await repositories.drivers.insert(driver);
   for (const vehicle of vehicles) await repositories.vehicles.insert(vehicle);
 
+  offices[1]!.changeStatus(OfficeStatus.inactive(), deletedAt);
+  await repositories.offices.updateStatus(offices[1]!);
   offices[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test office' });
   drivers[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test driver' });
   vehicles[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test vehicle' });
   await repositories.offices.softDelete(offices[2]!);
   await repositories.drivers.softDelete(drivers[2]!);
   await repositories.vehicles.softDelete(vehicles[2]!);
+  return offices;
+}
+
+async function seedBudgetAllocations(
+  database: ReturnType<typeof createDatabaseClient>,
+  offices: readonly Office[],
+  actorPublicId: string,
+  publicIds: UuidV7Generator,
+  createdAt: Date,
+): Promise<void> {
+  const repository = createKyselyBudgetRepositories(database).allocations;
+  const period = new ManilaFiscalPeriodPolicy().resolve(createdAt);
+  const nextPeriod =
+    period.quarter === 4
+      ? { fiscalYear: period.fiscalYear + 1, quarter: 1 }
+      : { fiscalYear: period.fiscalYear, quarter: period.quarter + 1 };
+  const fixtures = [
+    { ppmp: 'E2E-OPERATIONAL-CURRENT', status: 'ACTIVE', office: offices[0]!, period },
+    { ppmp: 'E2E-DRAFT-CURRENT', status: 'DRAFT', office: offices[0]!, period },
+    { ppmp: 'E2E-CLOSED-CURRENT', status: 'CLOSED', office: offices[0]!, period },
+    { ppmp: 'E2E-CANCELLED-CURRENT', status: 'CANCELLED', office: offices[0]!, period },
+    { ppmp: 'E2E-ACTIVE-FUTURE', status: 'ACTIVE', office: offices[0]!, period: nextPeriod },
+    { ppmp: 'E2E-ACTIVE-INACTIVE-OFFICE', status: 'ACTIVE', office: offices[1]!, period },
+  ] as const;
+
+  for (const fixture of fixtures) {
+    await repository.insert(
+      new BudgetAllocation({
+        publicId: PublicId.from(publicIds.generate().toString()),
+        ppmpNumber: PpmpNumber.from(fixture.ppmp),
+        officePublicId: fixture.office.publicId,
+        quarter: Quarter.from(fixture.period.quarter),
+        fiscalYear: FiscalYear.from(fixture.period.fiscalYear),
+        status: BudgetAllocationStatus.from(fixture.status),
+        createdAt,
+        updatedAt: createdAt,
+      }),
+    );
+  }
+
+  const deleted = new BudgetAllocation({
+    publicId: PublicId.from(publicIds.generate().toString()),
+    ppmpNumber: PpmpNumber.from('E2E-DELETED-ACTIVE'),
+    officePublicId: offices[0]!.publicId,
+    quarter: Quarter.from(period.quarter),
+    fiscalYear: FiscalYear.from(period.fiscalYear),
+    status: BudgetAllocationStatus.from('ACTIVE'),
+    createdAt,
+    updatedAt: createdAt,
+  });
+  await repository.insert(deleted);
+  deleted.softDelete({
+    at: new Date(createdAt.getTime() + 2_000),
+    actorPublicId: PublicId.from(actorPublicId),
+    reason: 'Deleted budget allocation browser fixture',
+  });
+  await repository.softDelete(deleted);
 }
 
 async function prepareAuditSchemas(container: StartedMySqlContainer): Promise<void> {

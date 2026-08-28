@@ -1,4 +1,14 @@
-import { Building2, CarFront, FileSearch, IdCard, Landmark, Shield, Users } from 'lucide-react';
+import {
+  Building2,
+  CarFront,
+  FileSearch,
+  IdCard,
+  Landmark,
+  LockKeyhole,
+  Shield,
+  Users,
+  WalletCards,
+} from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -48,6 +58,15 @@ export default async function ProtectedLayout({ children }: { readonly children:
                 Roles
               </Link>
             ) : null}
+            {hasPermission(permissions, 'auth.settings.manage') ? (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold hover:bg-muted"
+                href="/admin/security"
+              >
+                <LockKeyhole className="size-4" aria-hidden="true" />
+                Security
+              </Link>
+            ) : null}
             {hasPermission(permissions, 'office.manage') ? (
               <Link
                 className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold hover:bg-muted"
@@ -73,6 +92,16 @@ export default async function ProtectedLayout({ children }: { readonly children:
               >
                 <CarFront className="size-4" aria-hidden="true" />
                 Vehicles
+              </Link>
+            ) : null}
+            {hasPermission(permissions, 'budget.read') ||
+            hasPermission(permissions, 'budget.manage') ? (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold hover:bg-muted"
+                href="/budget-allocations"
+              >
+                <WalletCards className="size-4" aria-hidden="true" />
+                Budget allocations
               </Link>
             ) : null}
             {hasPermission(permissions, 'audit.read') ? (

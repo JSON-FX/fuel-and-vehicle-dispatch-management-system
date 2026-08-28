@@ -23,6 +23,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`delete from fvdms_audit.audit_outbox`.execute(database);
+  await sql`update authentication_settings
+    set mfa_required = false, updated_by_user_id = null, updated_at = '2026-08-28 00:00:00.000000'`.execute(
+    database,
+  );
   await sql`delete from admin_password_resets`.execute(database);
   await sql`delete from user_totp_factors`.execute(database);
   await sql`delete from login_rate_limits`.execute(database);
@@ -65,6 +69,30 @@ async function createUser(
 }
 
 describe('Kysely authentication repositories', () => {
+  it('persists the global MFA requirement with administrator evidence', async () => {
+    await createUser();
+    const settings = createKyselyAuthRepositories(database).authenticationSettings;
+
+    await expect(settings.get()).resolves.toEqual({
+      mfaRequired: false,
+      updatedAt: new Date('2026-08-28T00:00:00.000Z'),
+      updatedByUserPublicId: null,
+    });
+
+    const updatedAt = new Date('2026-08-28T02:00:00.000Z');
+    await expect(
+      settings.update({
+        mfaRequired: true,
+        updatedAt,
+        updatedByUserPublicId: userPublicId,
+      }),
+    ).resolves.toEqual({
+      mfaRequired: true,
+      updatedAt,
+      updatedByUserPublicId: userPublicId,
+    });
+  });
+
   it('maps users and resolves active role permissions without internal identifiers', async () => {
     await createUser();
 

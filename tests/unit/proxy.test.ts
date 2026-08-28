@@ -69,4 +69,16 @@ describe('proxy', () => {
 
     expect(response.headers.get('location')).toBe('https://fvdms.lan/account');
   });
+
+  it('allows the expired-session login route and clears the stale session cookie', () => {
+    const response = proxy(
+      new NextRequest('https://fvdms.lan/login?invalidSession=1', {
+        headers: { cookie: '__Host-fvdms_session=stale-session' },
+      }),
+    );
+
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('set-cookie')).toContain('__Host-fvdms_session=');
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+  });
 });

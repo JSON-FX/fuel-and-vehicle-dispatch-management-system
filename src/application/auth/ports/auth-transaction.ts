@@ -1,4 +1,5 @@
 import type { AuthenticationChallengeRepository } from '@/application/auth/ports/authentication-challenge-repository';
+import type { AuthenticationSettingsRepository } from '@/application/auth/ports/authentication-settings-repository';
 import type { AuditEventPort } from '@/application/audit/ports/audit-event-port';
 import type { PasswordResetRepository } from '@/application/auth/ports/password-reset-repository';
 import type { PermissionRepository } from '@/application/auth/ports/permission-repository';
@@ -10,6 +11,7 @@ import type { UserRepository } from '@/application/auth/ports/user-repository';
 
 export interface AuthRepositories {
   readonly users: UserRepository;
+  readonly authenticationSettings: AuthenticationSettingsRepository;
   readonly roles: RoleRepository;
   readonly permissions: PermissionRepository;
   readonly sessions: SessionRepository;

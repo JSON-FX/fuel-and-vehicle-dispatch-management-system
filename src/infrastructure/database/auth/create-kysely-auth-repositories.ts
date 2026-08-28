@@ -8,6 +8,7 @@ import {
 } from '@/infrastructure/database/audit/kysely-audit-outbox-store';
 
 import { KyselyAuthenticationChallengeRepository } from './kysely-authentication-challenge-repository';
+import { KyselyAuthenticationSettingsRepository } from './kysely-authentication-settings-repository';
 import { KyselyPasswordResetRepository } from './kysely-password-reset-repository';
 import { KyselyPermissionRepository } from './kysely-permission-repository';
 import { KyselyRateLimitRepository } from './kysely-rate-limit-repository';
@@ -27,6 +28,7 @@ export function createKyselyAuthRepositories(
 ): AuthRepositories {
   return Object.freeze({
     users: new KyselyUserRepository(database),
+    authenticationSettings: new KyselyAuthenticationSettingsRepository(database),
     roles: new KyselyRoleRepository(database),
     permissions: new KyselyPermissionRepository(database),
     sessions: new KyselySessionRepository(database),
