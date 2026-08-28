@@ -1,4 +1,4 @@
-import { Building2, Shield, Users } from 'lucide-react';
+import { Building2, FileSearch, Shield, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -46,6 +46,15 @@ export default async function ProtectedLayout({ children }: { readonly children:
               >
                 <Shield className="size-4" aria-hidden="true" />
                 Roles
+              </Link>
+            ) : null}
+            {hasPermission(permissions, 'audit.read') ? (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold hover:bg-muted"
+                href="/audit"
+              >
+                <FileSearch className="size-4" aria-hidden="true" />
+                Audit trail
               </Link>
             ) : null}
           </nav>

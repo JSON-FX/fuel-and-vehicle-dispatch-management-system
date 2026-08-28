@@ -48,7 +48,7 @@ describe('ChangePassword', () => {
               return 1;
             },
           } as never,
-          securityEvents: {
+          auditEvents: {
             append: async () => {
               operations.push('event');
             },

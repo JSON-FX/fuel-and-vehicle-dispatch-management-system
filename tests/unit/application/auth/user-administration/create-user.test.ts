@@ -6,6 +6,8 @@ import {
   authRepositories,
   FakeAuthTransaction,
   SequencePublicIdGenerator,
+  TEST_ACTOR_PUBLIC_ID,
+  TEST_ROLE_PUBLIC_ID,
 } from '../support/auth-fakes';
 
 describe('CreateUser', () => {
@@ -16,7 +18,7 @@ describe('CreateUser', () => {
         authRepositories({
           roles: {
             findByPublicIds: async () => [
-              { publicId: 'role', code: 'VIEWER', isPrivileged: false },
+              { publicId: TEST_ROLE_PUBLIC_ID, code: 'VIEWER', isPrivileged: false },
             ],
             replaceUserRoles: async () => {
               operations.push('roles');
@@ -27,7 +29,7 @@ describe('CreateUser', () => {
               operations.push('user');
             },
           } as never,
-          securityEvents: { append: async () => undefined },
+          auditEvents: { append: async () => undefined },
         }),
       ),
       passwordHasher: { hash: async () => 'temporary-hash' } as never,
@@ -37,11 +39,11 @@ describe('CreateUser', () => {
     });
 
     const result = await useCase.execute({
-      actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
+      actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
       username: 'new.viewer',
       email: 'new.viewer@example.lan',
       fullName: 'New Viewer',
-      rolePublicIds: ['role'],
+      rolePublicIds: [TEST_ROLE_PUBLIC_ID],
       requestId: 'request-id',
     });
 
@@ -55,7 +57,7 @@ describe('CreateUser', () => {
         authRepositories({
           roles: {
             findByPublicIds: async () => [
-              { publicId: 'role', code: 'SYSTEM_ADMIN', isPrivileged: true },
+              { publicId: TEST_ROLE_PUBLIC_ID, code: 'SYSTEM_ADMIN', isPrivileged: true },
             ],
           } as never,
         }),
@@ -68,11 +70,11 @@ describe('CreateUser', () => {
 
     await expect(
       useCase.execute({
-        actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
         username: 'system.admin',
         email: 'system.admin@example.lan',
         fullName: 'System Admin',
-        rolePublicIds: ['role'],
+        rolePublicIds: [TEST_ROLE_PUBLIC_ID],
         requestId: 'request-id',
       }),
     ).rejects.toMatchObject({ httpStatus: 403 });

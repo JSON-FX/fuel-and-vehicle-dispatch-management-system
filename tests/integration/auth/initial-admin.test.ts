@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await sql`delete from auth_security_events`.execute(database);
+  await sql`delete from fvdms_audit.audit_outbox`.execute(database);
   await sql`delete from user_roles`.execute(database);
   await sql`delete from users`.execute(database);
   useCase = new CreateInitialSuperAdmin({

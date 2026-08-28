@@ -20,6 +20,8 @@ export async function POST(request: Request, context: Context): Promise<Response
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.session.revoke',
+      requestId,
+      routeTemplate: '/api/users/:userId/sessions/revoke',
     });
     assertSecureJsonMutation({
       request: currentRequest,

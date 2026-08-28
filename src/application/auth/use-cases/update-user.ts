@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import { AuthorizationError, NotFoundError } from '@/application/shared/errors/application-error';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
@@ -39,16 +40,18 @@ export class UpdateUser {
       if (!updated) throw new NotFoundError();
       if (input.isActive !== undefined)
         await repositories.sessions.revokeForUser(input.targetPublicId, at, 'status_changed');
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.user.updated',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: input.targetPublicId,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: {},
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.user.updated',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: input.targetPublicId,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: {},
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

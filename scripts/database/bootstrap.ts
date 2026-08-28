@@ -1,7 +1,12 @@
+import type { RowDataPacket } from 'mysql2';
 import { createConnection } from 'mysql2/promise';
 
 import { parseBootstrapEnvironment } from '@/infrastructure/config/environment';
-import { createBootstrapStatements } from '@/infrastructure/database/bootstrap';
+import {
+  createAuditRuntimeGrantStatements,
+  createBootstrapStatements,
+  requiredAuditTables,
+} from '@/infrastructure/database/bootstrap';
 
 const environment = parseBootstrapEnvironment(process.env);
 const connection = await createConnection({
@@ -18,7 +23,27 @@ try {
     await connection.query(statement);
   }
 
-  console.info('Database and least-privilege users are ready.');
+  const requiredTables = requiredAuditTables(environment);
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `SELECT TABLE_SCHEMA AS tableSchema, TABLE_NAME AS tableName
+       FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA IN (?, ?)`,
+    [environment.audit.primarySchema, environment.audit.sinkSchema],
+  );
+  const existingTables = new Set(
+    rows.map((row) => `${String(row.tableSchema)}.${String(row.tableName)}`),
+  );
+
+  if ([...requiredTables].every((table) => existingTables.has(table))) {
+    for (const statement of createAuditRuntimeGrantStatements(environment)) {
+      await connection.query(statement);
+    }
+    console.info('Audit table grants are ready.');
+  } else {
+    console.info('Audit table grants will be applied after the audit migration.');
+  }
+
+  console.info('Databases and least-privilege users are ready.');
 } finally {
   await connection.end();
 }

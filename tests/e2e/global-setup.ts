@@ -2,10 +2,22 @@ import { spawn, type ChildProcess } from 'node:child_process';
 
 import { MySqlContainer } from '@testcontainers/mysql';
 import type { StartedMySqlContainer } from '@testcontainers/mysql';
+import { escape, escapeId } from 'mysql2';
+import { createConnection } from 'mysql2/promise';
 
+import type { AuditEventInput } from '@/application/audit/dto/audit-event-dtos';
+import { AuditChainWorker } from '@/application/audit/services/audit-chain-worker';
+import { AuditSinkDeliveryWorker } from '@/application/audit/services/audit-sink-delivery-worker';
+import { VerifyAuditChain } from '@/application/audit/services/verify-audit-chain';
+import { NodeSha256AuditHasher } from '@/infrastructure/audit/node-sha256-audit-hasher';
+import { Rfc8785AuditCanonicalizer } from '@/infrastructure/audit/rfc8785-audit-canonicalizer';
 import { AesGcmSecretEncryptor } from '@/infrastructure/auth/aes-gcm-secret-encryptor';
 import { Argon2PasswordHasher } from '@/infrastructure/auth/argon2-password-hasher';
 import { createKyselyAuthRepositories } from '@/infrastructure/database/auth/create-kysely-auth-repositories';
+import { KyselyAuthTransaction } from '@/infrastructure/database/auth/kysely-auth-transaction';
+import { KyselyAuditChainRepository } from '@/infrastructure/database/audit/kysely-audit-chain-repository';
+import { KyselyAuditSink } from '@/infrastructure/database/audit/kysely-audit-sink';
+import { KyselyAuditVerificationRepository } from '@/infrastructure/database/audit/kysely-audit-verification-repository';
 import { createDatabaseClient } from '@/infrastructure/database/client';
 import { createMigrator } from '@/infrastructure/database/migrator';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
@@ -23,24 +35,28 @@ export default async function globalSetup() {
     .withRootPassword('fvdms-e2e-root-password')
     .start();
   let server: ChildProcess | undefined;
+  let worker: ChildProcess | undefined;
 
   try {
     await prepareDatabase(container);
+    worker = startWorker(container);
     server = startServer(container);
     await waitForHealth(server);
   } catch (error) {
     server?.kill('SIGTERM');
+    worker?.kill('SIGTERM');
     await container.stop();
     throw error;
   }
 
   return async () => {
-    await stopServer(server!);
+    await Promise.all([stopProcess(server!), stopProcess(worker!)]);
     await container.stop();
   };
 }
 
 async function prepareDatabase(container: StartedMySqlContainer): Promise<void> {
+  await prepareAuditSchemas(container);
   const database = createDatabaseClient({
     host: container.getHost(),
     port: container.getPort(),
@@ -56,10 +72,27 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
     const migration = await createMigrator(database).migrateToLatest();
     if (migration.error) throw migration.error;
     const repositories = createKyselyAuthRepositories(database);
-    const roles = await repositories.roles.list();
+    let roles = await repositories.roles.list();
     const passwordHasher = new Argon2PasswordHasher();
     const publicIds = new UuidV7Generator();
     const now = new Date();
+    const auditReaderRolePublicId = publicIds.generate().toString();
+    await repositories.roles.create({
+      publicId: auditReaderRolePublicId,
+      code: 'AUDIT_READER',
+      name: 'Audit reader',
+      isPrivileged: false,
+      createdAt: now,
+    });
+    const auditRead = (await repositories.permissions.list()).find(
+      (permission) => permission.code === 'audit.read',
+    )!;
+    await repositories.permissions.replaceRolePermissions(
+      auditReaderRolePublicId,
+      [auditRead.publicId],
+      now,
+    );
+    roles = await repositories.roles.list();
     const users = [
       {
         ...credentials.standard,
@@ -98,9 +131,25 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         role: 'VIEWER',
         mustChange: false,
       },
+      {
+        ...credentials.auditor,
+        email: 'auditor.e2e@example.lan',
+        name: 'Auditor E2E',
+        role: 'AUDITOR',
+        mustChange: false,
+      },
+      {
+        ...credentials.auditReader,
+        email: 'audit.reader.e2e@example.lan',
+        name: 'Audit Reader E2E',
+        role: 'AUDIT_READER',
+        mustChange: false,
+      },
     ];
+    const userPublicIds = new Map<string, string>();
     for (const input of users) {
       const publicId = publicIds.generate().toString();
+      userPublicIds.set(input.username, publicId);
       await repositories.users.create({
         publicId,
         username: input.username,
@@ -130,13 +179,110 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         });
       }
     }
+    await seedAuditEvidence(database, userPublicIds.get(credentials.auditor.username)!);
   } finally {
     await database.destroy();
   }
 }
 
+async function prepareAuditSchemas(container: StartedMySqlContainer): Promise<void> {
+  const administrator = await createConnection({
+    host: container.getHost(),
+    port: container.getPort(),
+    user: 'root',
+    password: 'fvdms-e2e-root-password',
+    timezone: 'Z',
+  });
+  try {
+    for (const schema of ['fvdms_audit', 'fvdms_audit_sink']) {
+      await administrator.query(
+        `CREATE DATABASE ${escapeId(schema)} CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
+      );
+      await administrator.query(
+        `GRANT ALL PRIVILEGES ON ${escapeId(schema)}.* TO ${escape(container.getUsername())}@'%'`,
+      );
+    }
+  } finally {
+    await administrator.end();
+  }
+}
+
+async function seedAuditEvidence(
+  database: ReturnType<typeof createDatabaseClient>,
+  actorPublicId: string,
+): Promise<void> {
+  const capturedAt = new Date('2026-08-28T10:00:00.000Z');
+  const publicIds = new UuidV7Generator();
+  const transaction = new KyselyAuthTransaction(database);
+  for (let index = 1; index <= 52; index += 1) {
+    const event: AuditEventInput = {
+      publicId: publicIds.generate().toString(),
+      schemaVersion: 1,
+      occurredAt: new Date(capturedAt.getTime() + index * 1_000).toISOString(),
+      actorPublicId,
+      action: 'audit.seed.recorded',
+      entity: { type: 'audit_fixture', publicId: publicIds.generate().toString() },
+      requestId: `audit-seed-request-${index}`,
+      ipAddress: '192.0.2.50',
+      userAgent: 'Audit E2E setup',
+      reasonCode: null,
+      before: null,
+      after: { index },
+      metadata: { index, safeMarkup: '<script>alert("not executable")</script>' },
+    };
+    await transaction.execute(({ auditEvents }) => auditEvents.append(event));
+  }
+  const repository = new KyselyAuditChainRepository(database, {
+    primarySchema: 'fvdms_audit',
+  });
+  const hasher = new NodeSha256AuditHasher();
+  await new AuditChainWorker({
+    repository,
+    canonicalizer: new Rfc8785AuditCanonicalizer(),
+    hasher,
+    clock: { now: () => new Date('2026-08-28T10:02:00.000Z') },
+    policy: { batchSize: 100, maximumCanonicalPayloadBytes: 65_536 },
+  }).runBatch();
+  await new AuditSinkDeliveryWorker({
+    repository,
+    sink: new KyselyAuditSink(database, { sinkSchema: 'fvdms_audit_sink' }),
+    hasher,
+    clock: { now: () => new Date('2026-08-28T10:03:00.000Z') },
+    random: () => 0,
+    policy: { batchSize: 100, retryBaseMs: 1_000, retryMaxMs: 60_000 },
+  }).runBatch();
+  await new VerifyAuditChain({
+    repository: new KyselyAuditVerificationRepository(database, database, {
+      primarySchema: 'fvdms_audit',
+      sinkSchema: 'fvdms_audit_sink',
+    }),
+    hasher,
+    publicIds,
+    clock: { now: () => new Date('2026-08-28T10:04:00.000Z') },
+    pageSize: 20,
+  }).execute();
+}
+
 function startServer(container: StartedMySqlContainer): ChildProcess {
-  const environment: NodeJS.ProcessEnv = {
+  const environment = runtimeEnvironment(container);
+  const child = spawn(
+    process.execPath,
+    ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3100'],
+    { cwd: process.cwd(), env: environment, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  return child;
+}
+
+function startWorker(container: StartedMySqlContainer): ChildProcess {
+  return spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/audit/worker.ts'], {
+    cwd: process.cwd(),
+    env: runtimeEnvironment(container),
+    stdio: 'ignore',
+  });
+}
+
+function runtimeEnvironment(container: StartedMySqlContainer): NodeJS.ProcessEnv {
+  return {
     ...process.env,
     NODE_ENV: 'test',
     LOG_LEVEL: 'fatal',
@@ -149,6 +295,17 @@ function startServer(container: StartedMySqlContainer): ChildProcess {
     DATABASE_POOL_MAX: '8',
     DATABASE_CONNECT_TIMEOUT_MS: '5000',
     DATABASE_QUERY_TIMEOUT_MS: '2000',
+    AUDIT_DATABASE_NAME: 'fvdms_audit',
+    AUDIT_SINK_HOST: container.getHost(),
+    AUDIT_SINK_PORT: String(container.getPort()),
+    AUDIT_SINK_DATABASE_NAME: 'fvdms_audit_sink',
+    AUDIT_WORKER_DATABASE_USER: container.getUsername(),
+    AUDIT_WORKER_DATABASE_PASSWORD: container.getUserPassword(),
+    AUDIT_SINK_DATABASE_USER: container.getUsername(),
+    AUDIT_SINK_DATABASE_PASSWORD: container.getUserPassword(),
+    AUDIT_VERIFIER_DATABASE_USER: container.getUsername(),
+    AUDIT_VERIFIER_DATABASE_PASSWORD: container.getUserPassword(),
+    AUDIT_POLL_INTERVAL_MS: '100',
     AUTH_ALLOWED_ORIGIN: 'http://localhost:3100',
     AUTH_STANDARD_IDLE_TIMEOUT_SECONDS: '1800',
     AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS: '900',
@@ -165,12 +322,6 @@ function startServer(container: StartedMySqlContainer): ChildProcess {
     AUTH_TOTP_ENCRYPTION_KEYS: JSON.stringify({ 1: encryptionKey }),
     AUTH_RATE_LIMIT_HMAC_KEY: hmacKey,
   };
-  const child = spawn(
-    process.execPath,
-    ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3100'],
-    { cwd: process.cwd(), env: environment, stdio: ['ignore', 'pipe', 'pipe'] },
-  );
-  return child;
 }
 
 async function waitForHealth(server: ChildProcess): Promise<void> {
@@ -193,12 +344,12 @@ async function waitForHealth(server: ChildProcess): Promise<void> {
   throw new Error(`Next.js did not become ready for E2E tests.\n${output}`);
 }
 
-async function stopServer(server: ChildProcess): Promise<void> {
-  if (server.exitCode !== null) return;
-  server.kill('SIGTERM');
+async function stopProcess(processToStop: ChildProcess): Promise<void> {
+  if (processToStop.exitCode !== null) return;
+  processToStop.kill('SIGTERM');
   await Promise.race([
-    new Promise<void>((resolve) => server.once('exit', () => resolve())),
+    new Promise<void>((resolve) => processToStop.once('exit', () => resolve())),
     new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
   ]);
-  if (server.exitCode === null) server.kill('SIGKILL');
+  if (processToStop.exitCode === null) processToStop.kill('SIGKILL');
 }

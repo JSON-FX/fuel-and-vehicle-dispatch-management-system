@@ -24,3 +24,9 @@ test('authentication layout remains usable at narrow width and reduced motion', 
     ),
   ).toBe(true);
 });
+
+test('audit trail has no automated WCAG A or AA violations', async ({ page }) => {
+  await login(page, credentials.auditor);
+  await page.goto('/audit');
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+});

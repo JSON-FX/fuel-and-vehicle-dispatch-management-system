@@ -2,6 +2,7 @@ import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
+import { RecordAuthorizationDenial } from '@/application/auth/services/record-authorization-denial';
 import { AssignUserRoles } from '@/application/auth/use-cases/assign-user-roles';
 import { AesGcmSecretEncryptor } from '@/infrastructure/auth/aes-gcm-secret-encryptor';
 import { Argon2PasswordHasher } from '@/infrastructure/auth/argon2-password-hasher';
@@ -119,17 +120,22 @@ describe('authentication security controls', () => {
     const passwordHash = await new Argon2PasswordHasher().hash('CorrectPassword123!');
     const userPublicId = await insertUser('rollback.user', passwordHash);
     await expect(
-      new KyselyAuthTransaction(database).execute(async ({ users, securityEvents }) => {
+      new KyselyAuthTransaction(database).execute(async ({ users, auditEvents }) => {
         await users.updateIdentity({ publicId: userPublicId, isActive: false, updatedAt: now });
-        await securityEvents.append({
+        await auditEvents.append({
           publicId: new UuidV7Generator().generate().toString(),
-          type: 'auth.test.rollback',
+          schemaVersion: 1,
+          occurredAt: now.toISOString(),
           actorPublicId: userPublicId,
-          targetPublicId: userPublicId,
+          action: 'auth.test.rollback',
+          entity: { type: 'user', publicId: userPublicId },
           requestId: 'rollback',
+          ipAddress: null,
+          userAgent: null,
           reasonCode: 'test',
+          before: null,
+          after: null,
           metadata: {},
-          occurredAt: now,
         });
         throw new Error('force rollback');
       }),
@@ -138,7 +144,59 @@ describe('authentication security controls', () => {
     expect(
       (await createKyselyAuthRepositories(database).users.findByPublicId(userPublicId))?.isActive,
     ).toBe(true);
-    expect(await database.selectFrom('auth_security_events').selectAll().execute()).toHaveLength(0);
+    expect((await sql`select * from fvdms_audit.audit_outbox`.execute(database)).rows).toHaveLength(
+      0,
+    );
+  });
+
+  it('durably records authorization denial context before returning the denial', async () => {
+    const passwordHash = await new Argon2PasswordHasher().hash('CorrectPassword123!');
+    const actorPublicId = await insertUser('denied.auditor', passwordHash);
+    const principal: CurrentPrincipal = {
+      userPublicId: actorPublicId,
+      username: 'denied.auditor',
+      fullName: 'Denied Auditor',
+      roles: ['VIEWER'],
+      permissions: [],
+      isPrivileged: false,
+      mustChangePassword: false,
+      mfaEnrolled: true,
+    };
+
+    await new RecordAuthorizationDenial({
+      transaction: new KyselyAuthTransaction(database),
+      publicIds: new UuidV7Generator(),
+      clock: { now: () => now },
+    }).execute({
+      principal,
+      permission: 'audit.read',
+      requestId: 'authorization-denial-request',
+      routeTemplate: '/api/audit-events',
+      sourceAddress: '192.0.2.10',
+      userAgent: 'audit-integration-test',
+    });
+
+    const stored = await sql<{
+      action: string;
+      actor_public_id: Buffer;
+      request_id: string;
+      canonical_payload: string;
+    }>`select action, actor_public_id, request_id, canonical_payload
+       from fvdms_audit.audit_outbox`.execute(database);
+    expect(stored.rows).toHaveLength(1);
+    expect(stored.rows[0]).toMatchObject({
+      action: 'auth.authorization.denied',
+      request_id: 'authorization-denial-request',
+    });
+    expect(JSON.parse(stored.rows[0]!.canonical_payload)).toMatchObject({
+      actorPublicId,
+      ipAddress: '192.0.2.10',
+      metadata: {
+        requiredPermission: 'audit.read',
+        routeTemplate: '/api/audit-events',
+      },
+      userAgent: 'audit-integration-test',
+    });
   });
 });
 
@@ -157,8 +215,8 @@ async function insertUser(username: string, passwordHash: string): Promise<strin
 }
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
+  await sql`delete from fvdms_audit.audit_outbox`.execute(target);
   for (const table of [
-    'auth_security_events',
     'admin_password_resets',
     'user_totp_factors',
     'login_rate_limits',

@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import { AuthorizationError, NotFoundError } from '@/application/shared/errors/application-error';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
@@ -32,19 +33,21 @@ export class AssignRolePermissions {
       const affectedUsers = await repositories.roles.userPublicIdsForRole(input.rolePublicId);
       for (const userPublicId of affectedUsers)
         await repositories.sessions.revokeForUser(userPublicId, at, 'permissions_changed');
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.role.permissions.changed',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: null,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: {
-          rolePublicId: input.rolePublicId,
-          permissionCount: input.permissionPublicIds.length,
-        },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.role.permissions.changed',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: null,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: {
+            rolePublicId: input.rolePublicId,
+            permissionCount: input.permissionPublicIds.length,
+          },
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

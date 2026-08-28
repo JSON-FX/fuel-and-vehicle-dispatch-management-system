@@ -1,5 +1,6 @@
 import type { CurrentPrincipal } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import {
   AuthorizationError,
@@ -57,16 +58,18 @@ export class UpdateRole {
       for (const userPublicId of affectedUsers) {
         await repositories.sessions.revokeForUser(userPublicId, at, 'role_changed');
       }
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.role.updated',
-        actorPublicId: input.actor.userPublicId,
-        targetPublicId: null,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: { rolePublicId: input.rolePublicId },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.role.updated',
+          actorPublicId: input.actor.userPublicId,
+          targetPublicId: null,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: { rolePublicId: input.rolePublicId },
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

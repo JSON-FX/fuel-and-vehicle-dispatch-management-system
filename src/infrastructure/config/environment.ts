@@ -121,6 +121,48 @@ const authenticationEnvironmentSchema = z
     }
   });
 
+const auditPolicySchema = z
+  .object({
+    AUDIT_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit'),
+    AUDIT_SINK_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit_sink'),
+    AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: positiveIntegerSchema.default(65_536),
+    AUDIT_CHAIN_BATCH_SIZE: positiveIntegerSchema.default(100),
+    AUDIT_SINK_BATCH_SIZE: positiveIntegerSchema.default(100),
+    AUDIT_POLL_INTERVAL_MS: positiveIntegerSchema.default(1_000),
+    AUDIT_RETRY_BASE_MS: positiveIntegerSchema.default(1_000),
+    AUDIT_RETRY_MAX_MS: positiveIntegerSchema.default(60_000),
+    AUDIT_VERIFICATION_PAGE_SIZE: positiveIntegerSchema.default(500),
+  })
+  .superRefine((value, context) => {
+    if (value.AUDIT_RETRY_MAX_MS < value.AUDIT_RETRY_BASE_MS) {
+      context.addIssue({
+        code: 'custom',
+        path: ['AUDIT_RETRY_MAX_MS'],
+        message: 'AUDIT_RETRY_MAX_MS must be greater than or equal to AUDIT_RETRY_BASE_MS.',
+      });
+    }
+  });
+
+const auditWorkerEnvironmentSchema = databaseConnectionSchema
+  .safeExtend({
+    AUDIT_WORKER_DATABASE_USER: databaseIdentifierSchema,
+    AUDIT_WORKER_DATABASE_PASSWORD: z.string().min(1),
+    AUDIT_SINK_HOST: z.string().min(1),
+    AUDIT_SINK_PORT: positiveIntegerSchema.default(3306),
+    AUDIT_SINK_DATABASE_USER: databaseIdentifierSchema,
+    AUDIT_SINK_DATABASE_PASSWORD: z.string().min(1),
+  })
+  .and(auditPolicySchema);
+
+const auditVerifierEnvironmentSchema = databaseConnectionSchema
+  .safeExtend({
+    AUDIT_VERIFIER_DATABASE_USER: databaseIdentifierSchema,
+    AUDIT_VERIFIER_DATABASE_PASSWORD: z.string().min(1),
+    AUDIT_SINK_HOST: z.string().min(1),
+    AUDIT_SINK_PORT: positiveIntegerSchema.default(3306),
+  })
+  .and(auditPolicySchema);
+
 const migrationConnectionSchema = databaseConnectionSchema.safeExtend({
   MIGRATION_DATABASE_USER: databaseIdentifierSchema,
   MIGRATION_DATABASE_PASSWORD: z.string().min(1),
@@ -136,6 +178,14 @@ const bootstrapEnvironmentSchema = z.object({
   DATABASE_PASSWORD: z.string().min(1),
   MIGRATION_DATABASE_USER: databaseIdentifierSchema,
   MIGRATION_DATABASE_PASSWORD: z.string().min(1),
+  AUDIT_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit'),
+  AUDIT_SINK_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit_sink'),
+  AUDIT_WORKER_DATABASE_USER: databaseIdentifierSchema,
+  AUDIT_WORKER_DATABASE_PASSWORD: z.string().min(1),
+  AUDIT_SINK_DATABASE_USER: databaseIdentifierSchema,
+  AUDIT_SINK_DATABASE_PASSWORD: z.string().min(1),
+  AUDIT_VERIFIER_DATABASE_USER: databaseIdentifierSchema,
+  AUDIT_VERIFIER_DATABASE_PASSWORD: z.string().min(1),
 });
 
 export type NodeEnvironment = z.infer<typeof nodeEnvironmentSchema>;
@@ -161,6 +211,27 @@ export interface DatabaseRuntimeEnvironment {
 
 export interface RuntimeEnvironment extends DatabaseRuntimeEnvironment {
   readonly auth: AuthenticationEnvironment;
+  readonly audit: AuditPolicyEnvironment;
+}
+
+export interface AuditPolicyEnvironment {
+  readonly primarySchema: string;
+  readonly sinkSchema: string;
+  readonly maxCanonicalPayloadBytes: number;
+  readonly chainBatchSize: number;
+  readonly sinkBatchSize: number;
+  readonly pollIntervalMs: number;
+  readonly retryBaseMs: number;
+  readonly retryMaxMs: number;
+  readonly verificationPageSize: number;
+}
+
+export interface AuditProcessEnvironment {
+  readonly nodeEnv: NodeEnvironment;
+  readonly logLevel: LogLevel;
+  readonly primaryDatabase: DatabaseEnvironment;
+  readonly sinkDatabase: DatabaseEnvironment;
+  readonly policy: AuditPolicyEnvironment;
 }
 
 export interface AuthenticationEnvironment {
@@ -191,6 +262,13 @@ export interface BootstrapEnvironment {
   readonly database: { readonly name: string };
   readonly application: { readonly user: string; readonly password: string };
   readonly migration: { readonly user: string; readonly password: string };
+  readonly audit: {
+    readonly primarySchema: string;
+    readonly sinkSchema: string;
+    readonly worker: { readonly user: string; readonly password: string };
+    readonly sinkWriter: { readonly user: string; readonly password: string };
+    readonly verifier: { readonly user: string; readonly password: string };
+  };
 }
 
 export interface BuildEnvironment {
@@ -235,12 +313,55 @@ function mapDatabaseEnvironment(
   };
 }
 
+function mapAuditPolicy(parsed: z.infer<typeof auditPolicySchema>): AuditPolicyEnvironment {
+  return {
+    primarySchema: parsed.AUDIT_DATABASE_NAME,
+    sinkSchema: parsed.AUDIT_SINK_DATABASE_NAME,
+    maxCanonicalPayloadBytes: parsed.AUDIT_MAX_CANONICAL_PAYLOAD_BYTES,
+    chainBatchSize: parsed.AUDIT_CHAIN_BATCH_SIZE,
+    sinkBatchSize: parsed.AUDIT_SINK_BATCH_SIZE,
+    pollIntervalMs: parsed.AUDIT_POLL_INTERVAL_MS,
+    retryBaseMs: parsed.AUDIT_RETRY_BASE_MS,
+    retryMaxMs: parsed.AUDIT_RETRY_MAX_MS,
+    verificationPageSize: parsed.AUDIT_VERIFICATION_PAGE_SIZE,
+  };
+}
+
+function mapAuditDatabaseEnvironment(
+  parsed: z.infer<typeof databaseConnectionSchema>,
+  input: {
+    readonly host: string;
+    readonly port: number;
+    readonly name: string;
+    readonly user: string;
+    readonly password: string;
+  },
+): DatabaseEnvironment {
+  return {
+    ...mapDatabaseEnvironment(parsed, input),
+    host: input.host,
+    port: input.port,
+    name: input.name,
+  };
+}
+
+function assertSeparatedSinkIdentity(input: {
+  readonly nodeEnv: NodeEnvironment;
+  readonly applicationUser: string;
+  readonly sinkWriterUser: string;
+}): void {
+  if (input.nodeEnv !== 'test' && input.applicationUser === input.sinkWriterUser) {
+    throw new Error('AUDIT_SINK_DATABASE_USER must differ from DATABASE_USER outside tests.');
+  }
+}
+
 export function parseRuntimeEnvironment(
   environment: Record<string, string | undefined>,
 ): RuntimeEnvironment {
   rejectPublicSecrets(environment);
   const parsed = databaseConnectionSchema.parse(environment);
   const auth = authenticationEnvironmentSchema.parse(environment);
+  const audit = auditPolicySchema.parse(environment);
 
   return {
     ...parseCommonEnvironment(environment),
@@ -265,6 +386,66 @@ export function parseRuntimeEnvironment(
       totpEncryptionKeys: auth.AUTH_TOTP_ENCRYPTION_KEYS,
       rateLimitHmacKey: auth.AUTH_RATE_LIMIT_HMAC_KEY,
     },
+    audit: mapAuditPolicy(audit),
+  };
+}
+
+export function parseAuditWorkerEnvironment(
+  environment: Record<string, string | undefined>,
+): AuditProcessEnvironment {
+  rejectPublicSecrets(environment);
+  const common = parseCommonEnvironment(environment);
+  const parsed = auditWorkerEnvironmentSchema.parse(environment);
+  assertSeparatedSinkIdentity({
+    nodeEnv: common.nodeEnv,
+    applicationUser: parsed.DATABASE_USER,
+    sinkWriterUser: parsed.AUDIT_SINK_DATABASE_USER,
+  });
+
+  return {
+    ...common,
+    primaryDatabase: mapAuditDatabaseEnvironment(parsed, {
+      host: parsed.DATABASE_HOST,
+      port: parsed.DATABASE_PORT,
+      name: parsed.AUDIT_DATABASE_NAME,
+      user: parsed.AUDIT_WORKER_DATABASE_USER,
+      password: parsed.AUDIT_WORKER_DATABASE_PASSWORD,
+    }),
+    sinkDatabase: mapAuditDatabaseEnvironment(parsed, {
+      host: parsed.AUDIT_SINK_HOST,
+      port: parsed.AUDIT_SINK_PORT,
+      name: parsed.AUDIT_SINK_DATABASE_NAME,
+      user: parsed.AUDIT_SINK_DATABASE_USER,
+      password: parsed.AUDIT_SINK_DATABASE_PASSWORD,
+    }),
+    policy: mapAuditPolicy(parsed),
+  };
+}
+
+export function parseAuditVerifierEnvironment(
+  environment: Record<string, string | undefined>,
+): AuditProcessEnvironment {
+  rejectPublicSecrets(environment);
+  const common = parseCommonEnvironment(environment);
+  const parsed = auditVerifierEnvironmentSchema.parse(environment);
+
+  return {
+    ...common,
+    primaryDatabase: mapAuditDatabaseEnvironment(parsed, {
+      host: parsed.DATABASE_HOST,
+      port: parsed.DATABASE_PORT,
+      name: parsed.AUDIT_DATABASE_NAME,
+      user: parsed.AUDIT_VERIFIER_DATABASE_USER,
+      password: parsed.AUDIT_VERIFIER_DATABASE_PASSWORD,
+    }),
+    sinkDatabase: mapAuditDatabaseEnvironment(parsed, {
+      host: parsed.AUDIT_SINK_HOST,
+      port: parsed.AUDIT_SINK_PORT,
+      name: parsed.AUDIT_SINK_DATABASE_NAME,
+      user: parsed.AUDIT_VERIFIER_DATABASE_USER,
+      password: parsed.AUDIT_VERIFIER_DATABASE_PASSWORD,
+    }),
+    policy: mapAuditPolicy(parsed),
   };
 }
 
@@ -301,6 +482,22 @@ export function parseBootstrapEnvironment(
     migration: {
       user: parsed.MIGRATION_DATABASE_USER,
       password: parsed.MIGRATION_DATABASE_PASSWORD,
+    },
+    audit: {
+      primarySchema: parsed.AUDIT_DATABASE_NAME,
+      sinkSchema: parsed.AUDIT_SINK_DATABASE_NAME,
+      worker: {
+        user: parsed.AUDIT_WORKER_DATABASE_USER,
+        password: parsed.AUDIT_WORKER_DATABASE_PASSWORD,
+      },
+      sinkWriter: {
+        user: parsed.AUDIT_SINK_DATABASE_USER,
+        password: parsed.AUDIT_SINK_DATABASE_PASSWORD,
+      },
+      verifier: {
+        user: parsed.AUDIT_VERIFIER_DATABASE_USER,
+        password: parsed.AUDIT_VERIFIER_DATABASE_PASSWORD,
+      },
     },
   };
 }

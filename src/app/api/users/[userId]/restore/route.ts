@@ -14,6 +14,8 @@ export async function POST(request: Request, context: Context): Promise<Response
     const authenticated = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'user.manage',
+      requestId,
+      routeTemplate: '/api/users/:userId/restore',
     });
     assertSecureJsonMutation({
       request: currentRequest,

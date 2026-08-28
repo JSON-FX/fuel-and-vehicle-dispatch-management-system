@@ -1,4 +1,5 @@
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { PasswordHasher } from '@/application/auth/ports/password-hasher';
 import { NotFoundError } from '@/application/shared/errors/application-error';
@@ -47,16 +48,18 @@ export class ChangePassword {
       }
       await repositories.sessions.revokeForUser(user.publicId, at, 'password_changed');
       await repositories.challenges.revokeForUser(user.publicId, at);
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.password.changed',
-        actorPublicId: user.publicId,
-        targetPublicId: user.publicId,
-        requestId: input.requestId,
-        reasonCode: 'self_service',
-        metadata: {},
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.password.changed',
+          actorPublicId: user.publicId,
+          targetPublicId: user.publicId,
+          requestId: input.requestId,
+          reasonCode: 'self_service',
+          metadata: {},
+          occurredAt: at,
+        }),
+      );
     });
   }
 }

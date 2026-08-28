@@ -6,6 +6,8 @@ import {
   authRepositories,
   FakeAuthTransaction,
   SequencePublicIdGenerator,
+  TEST_ACTOR_PUBLIC_ID,
+  TEST_ROLE_PUBLIC_ID,
 } from '../support/auth-fakes';
 
 describe('UpdateRole', () => {
@@ -16,7 +18,7 @@ describe('UpdateRole', () => {
         authRepositories({
           roles: {
             findByPublicId: async () => ({
-              publicId: 'role',
+              publicId: TEST_ROLE_PUBLIC_ID,
               code: 'VIEWER',
               isPrivileged: false,
               isActive: true,
@@ -30,7 +32,7 @@ describe('UpdateRole', () => {
               return 1;
             },
           } as never,
-          securityEvents: { append: async () => undefined },
+          auditEvents: { append: async () => undefined },
         }),
       ),
       publicIds: new SequencePublicIdGenerator(),
@@ -38,8 +40,8 @@ describe('UpdateRole', () => {
     });
 
     await useCase.execute({
-      actor: { userPublicId: 'actor', permissions: ['role.manage'] } as never,
-      rolePublicId: 'role',
+      actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['role.manage'] } as never,
+      rolePublicId: TEST_ROLE_PUBLIC_ID,
       name: 'Read-only users',
       isActive: false,
       requestId: 'request-id',

@@ -24,7 +24,7 @@ describe('Logout', () => {
               return true;
             },
           } as never,
-          securityEvents: { append: async () => undefined },
+          auditEvents: { append: async () => undefined },
         }),
       ),
       tokenGenerator: { hashToken: () => new Uint8Array(32) } as never,

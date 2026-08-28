@@ -57,6 +57,7 @@ describe('application composition', () => {
         composition.authenticateChallenge,
         composition.authenticateSession,
         composition.authorizePermission,
+        composition.recordAuthorizationDenial,
         composition.logout,
         composition.getCurrentPrincipal,
         composition.getCurrentChallenge,
@@ -79,6 +80,9 @@ describe('application composition', () => {
         composition.createRole,
         composition.updateRole,
         composition.assignRolePermissions,
+        composition.searchAuditEvents,
+        composition.getAuditEvent,
+        composition.getLatestAuditVerification,
       ].every((service) => typeof service.execute === 'function'),
     ).toBe(true);
   });

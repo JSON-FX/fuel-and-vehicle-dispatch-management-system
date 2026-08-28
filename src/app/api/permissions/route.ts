@@ -7,10 +7,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request): Promise<Response> {
   const composition = createApplicationComposition();
-  return withResponseHandler(composition, async ({ request: currentRequest }) => {
+  return withResponseHandler(composition, async ({ request: currentRequest, requestId }) => {
     const { principal } = await authenticateRequest(currentRequest, {
       ...composition,
       permission: 'role.read',
+      requestId,
+      routeTemplate: '/api/permissions',
     });
     return composition.listPermissions.execute(principal);
   })(request);

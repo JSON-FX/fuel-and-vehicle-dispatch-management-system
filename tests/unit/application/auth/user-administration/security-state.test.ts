@@ -7,6 +7,9 @@ import {
   authRepositories,
   FakeAuthTransaction,
   SequencePublicIdGenerator,
+  TEST_ACTOR_PUBLIC_ID,
+  TEST_ROLE_PUBLIC_ID,
+  TEST_TARGET_PUBLIC_ID,
 } from '../support/auth-fakes';
 
 describe('user administration security state', () => {
@@ -37,20 +40,20 @@ describe('user administration security state', () => {
 
   it('requires user.manage and a specific deletion reason', async () => {
     const base = {
-      targetPublicId: 'target',
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       requestId: 'request-id',
       reason: 'Administrative lifecycle change.',
     };
     await expect(
       softDelete().execute({
         ...base,
-        actor: { userPublicId: 'actor', permissions: [] } as never,
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: [] } as never,
       }),
     ).rejects.toMatchObject({ httpStatus: 403 });
     await expect(
       softDelete().execute({
         ...base,
-        actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
         reason: 'too short',
       }),
     ).rejects.toMatchObject({ httpStatus: 400 });
@@ -59,7 +62,7 @@ describe('user administration security state', () => {
   it('returns not found for an unknown deletion target', async () => {
     await expect(
       softDelete({ users: { findByPublicId: vi.fn().mockResolvedValue(null) } as never }).execute({
-        actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
         targetPublicId: 'missing',
         reason: 'Administrative lifecycle change.',
         requestId: 'request-id',
@@ -75,8 +78,8 @@ describe('user administration security state', () => {
           countActiveUsersWithRole: vi.fn().mockResolvedValue(1),
         } as never,
       }).execute({
-        actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
-        targetPublicId: 'target',
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
+        targetPublicId: TEST_TARGET_PUBLIC_ID,
         reason: 'Administrative lifecycle change.',
         requestId: 'request-id',
       }),
@@ -95,17 +98,17 @@ describe('user administration security state', () => {
       } as never,
       sessions: { revokeForUser: revokeSessions } as never,
       challenges: { revokeForUser: revokeChallenges } as never,
-      securityEvents: { append } as never,
+      auditEvents: { append } as never,
     }).execute({
-      actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
-      targetPublicId: 'target',
+      actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
       reason: ' Administrative lifecycle change. ',
       requestId: 'request-id',
     });
 
-    expect(softDeleteUser).toHaveBeenCalledWith('target', now);
-    expect(revokeSessions).toHaveBeenCalledWith('target', now, 'user_deleted');
-    expect(revokeChallenges).toHaveBeenCalledWith('target', now);
+    expect(softDeleteUser).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now);
+    expect(revokeSessions).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now, 'user_deleted');
+    expect(revokeChallenges).toHaveBeenCalledWith(TEST_TARGET_PUBLIC_ID, now);
     expect(append).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { reason: 'Administrative lifecycle change.' } }),
     );
@@ -119,8 +122,8 @@ describe('user administration security state', () => {
           softDelete: vi.fn().mockResolvedValue(false),
         } as never,
       }).execute({
-        actor: { userPublicId: 'actor', permissions: ['user.manage'] } as never,
-        targetPublicId: 'target',
+        actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['user.manage'] } as never,
+        targetPublicId: TEST_TARGET_PUBLIC_ID,
         reason: 'Administrative lifecycle change.',
         requestId: 'request-id',
       }),
@@ -133,17 +136,20 @@ describe('user administration security state', () => {
       transaction: new FakeAuthTransaction(
         authRepositories({
           users: {
-            findByPublicId: async () => ({ publicId: 'target', roles: ['VIEWER'] }),
+            findByPublicId: async () => ({
+              publicId: TEST_TARGET_PUBLIC_ID,
+              roles: ['VIEWER'],
+            }),
             countActiveUsersWithRole: async () => 2,
           } as never,
           roles: {
             findByPublicIds: async () => [
-              { publicId: 'role', code: 'AUDITOR', isPrivileged: false },
+              { publicId: TEST_ROLE_PUBLIC_ID, code: 'AUDITOR', isPrivileged: false },
             ],
             replaceUserRoles: async () => operations.push('roles'),
           } as never,
           sessions: { revokeForUser: async () => (operations.push('sessions'), 1) } as never,
-          securityEvents: { append: async () => operations.push('event') } as never,
+          auditEvents: { append: async () => operations.push('event') } as never,
         }),
       ),
       publicIds: new SequencePublicIdGenerator(),
@@ -151,9 +157,9 @@ describe('user administration security state', () => {
     });
 
     await useCase.execute({
-      actor: { userPublicId: 'actor', permissions: ['role.manage'] } as never,
-      targetPublicId: 'target',
-      rolePublicIds: ['role'],
+      actor: { userPublicId: TEST_ACTOR_PUBLIC_ID, permissions: ['role.manage'] } as never,
+      targetPublicId: TEST_TARGET_PUBLIC_ID,
+      rolePublicIds: [TEST_ROLE_PUBLIC_ID],
       requestId: 'request-id',
     });
 

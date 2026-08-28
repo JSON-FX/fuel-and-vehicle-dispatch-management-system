@@ -22,7 +22,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await sql`delete from auth_security_events`.execute(database);
+  await sql`delete from fvdms_audit.audit_outbox`.execute(database);
   await sql`delete from admin_password_resets`.execute(database);
   await sql`delete from user_totp_factors`.execute(database);
   await sql`delete from login_rate_limits`.execute(database);
@@ -143,26 +143,30 @@ describe('Kysely authentication repositories', () => {
 
   it('rolls back a security event when its workflow fails', async () => {
     await expect(
-      transaction.execute(async ({ securityEvents }) => {
-        await securityEvents.append({
+      transaction.execute(async ({ auditEvents }) => {
+        await auditEvents.append({
           publicId: '01900000-0000-7000-8000-000000000103',
-          type: 'auth.test',
+          schemaVersion: 1,
+          occurredAt: '2026-08-28T00:00:00.000Z',
           actorPublicId: null,
-          targetPublicId: null,
+          action: 'auth.test',
+          entity: null,
           requestId: '01900000-0000-7000-8000-000000000104',
+          ipAddress: null,
+          userAgent: null,
           reasonCode: 'test',
+          before: null,
+          after: null,
           metadata: {},
-          occurredAt: new Date('2026-08-28T00:00:00.000Z'),
         });
         throw new Error('rollback');
       }),
     ).rejects.toThrow('rollback');
 
-    const count = await database
-      .selectFrom('auth_security_events')
-      .select((expression) => expression.fn.countAll<string>().as('count'))
-      .executeTakeFirstOrThrow();
-    expect(count.count).toBe('0');
+    const count = await sql<{ count: string }>`
+      select count(*) as count from fvdms_audit.audit_outbox
+    `.execute(database);
+    expect(count.rows[0]?.count).toBe('0');
   });
 
   it('covers user, role, and permission administration state transitions', async () => {

@@ -1,8 +1,8 @@
 # Fuel and Vehicle Dispatch Management System
 
-This repository contains the secure application foundation and account-access system for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
+This repository contains the secure application foundation, account access, and durable audit system for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
 
-The current system includes database-backed sessions, forced password replacement, privileged-account TOTP, role-based access control, account administration, and append-only authentication security events.
+The current system includes database-backed sessions, forced password replacement, privileged-account TOTP, role-based access control, account administration, and an independently verified audit chain.
 
 ## Prerequisites
 
@@ -33,16 +33,16 @@ Expected results:
 
 - The application is available at `https://fvdms.lan`.
 - `https://fvdms.lan/api/health` returns a success envelope with database status `available`.
-- `docker compose ps` shows `fvdms` as healthy.
+- `docker compose ps` shows `fvdms` as healthy and `fvdms-audit-worker` as running.
 - No application or database port is published directly to the host.
 
-Follow application logs:
+Follow application and audit-worker logs:
 
 ```sh
 pnpm dev:logs
 ```
 
-Stop only the FVDMS project container:
+Stop the FVDMS application and audit worker:
 
 ```sh
 pnpm dev:down
@@ -90,7 +90,7 @@ Administrators perform password reset, TOTP reset, session revocation, user life
 
 ## Database operations
 
-The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates only its database and two least-privilege users.
+The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates its application database, primary audit schema, secondary audit schema, and dedicated accounts.
 
 Run database commands from the repository root:
 
@@ -101,9 +101,50 @@ pnpm db:status
 pnpm db:rollback
 ```
 
-These commands run in a short-lived project container. Repeated bootstrap and migrate calls are safe.
+These commands run in the short-lived `database-tools` container. Repeated bootstrap and migrate calls are safe.
 
-The runtime user can read and write application data. Only the migration user can change the FVDMS schema. Neither user is the shared MySQL administrator.
+The application, migration, worker, sink-writer, and verifier accounts have separate grants. Only the migration account can change FVDMS schemas. None is the shared MySQL administrator.
+
+## Durable audit operations
+
+Business and authentication use cases append a validated audit event inside their existing MySQL transaction. A successful response therefore depends on the primary outbox commit. It does not wait for chaining, sink delivery, or verification.
+
+Every producer must use an event-specific builder with allowlisted fields. Events may contain public identifiers, stable action codes, exact UTC times, and bounded audit-safe JSON. Never include credentials, tokens, cookies, encryption material, raw request bodies, SQL, or arbitrary object serialization.
+
+The worker performs two independent bounded operations:
+
+1. It finalizes ordered outbox rows into a global RFC 8785 and SHA-256 hash chain.
+2. It delivers exact append-only copies to the secondary audit sink.
+
+The worker is not routed through Traefik and publishes no port. Stop it with `pnpm dev:down`, or restart only that process with:
+
+```sh
+docker compose restart audit-worker
+```
+
+Sink outages do not block business capture or primary chain progress. Delivery retries use bounded backoff and exact fingerprint checks. The sink writer may select a fingerprint and insert a row, but it cannot update or delete evidence.
+
+A poison outbox event stops finalization at the first invalid source position. The worker does not skip, rewrite, or repair it. Preserve the database and logs, investigate the producing code and transaction, then follow an approved incident procedure.
+
+Run one verification through its dedicated container:
+
+```sh
+pnpm audit:verify:container
+```
+
+Exit code `0` means the captured primary range and sink match. Exit code `1` means a safe mismatch category was recorded. Exit code `2` means infrastructure prevented verification. A failed run never changes audit evidence.
+
+The `/audit` page is read-only and requires `audit.read`. Sensitive request context also requires `audit.read_sensitive`. Every successful search or detail read appends one `audit.accessed` event.
+
+Local development places both audit schemas on the same shared MySQL host. This separation proves credentials, append-only behavior, and adapter boundaries. It is not an independent backup or production trust boundary. Production must place the sink on an independently controlled host or service through the existing `AuditSink` port.
+
+Generate a different random password for every database account outside local development:
+
+```sh
+openssl rand -base64 32
+```
+
+Do not place passwords in images, client variables, logs, or committed environment files. Retention, archival, legal holds, and production secondary-host operations remain deferred to FVD-012 and FVD-011.
 
 ## Tests and validation
 
@@ -125,7 +166,7 @@ Install Chromium once, then run the isolated browser suite:
 
 ```sh
 pnpm exec playwright install chromium
-pnpm test:e2e -- --project=chromium
+pnpm exec playwright test --project=chromium
 ```
 
 The browser setup starts its own MySQL 8.4.11 container and Next.js process on `http://localhost:3100`. It does not read or mutate the shared local database.
@@ -137,7 +178,7 @@ pnpm test:coverage
 pnpm validate
 ```
 
-The complete suite checks formatting, linting, types, coverage, integration behavior, and the production build. GitHub Actions runs the same checks after the repository is pushed to a remote.
+The complete suite checks formatting, linting, types, coverage, restricted-account integration behavior, browser accessibility, and the production build. GitHub Actions runs the same checks after the repository is pushed to a remote.
 
 ## Architecture boundaries
 
@@ -193,4 +234,11 @@ Do not copy, mount, print, or commit the shared certificate private key. Firefox
 
 FVDMS stores only hashes of browser session, challenge, and CSRF tokens. TOTP secrets use versioned AES-256-GCM encryption. Authentication responses use `Cache-Control: no-store`, exact-origin checks, synchronizer CSRF tokens, generic credential failures, and durable account/source throttles.
 
-This ticket does not provide self-service email recovery, SMS recovery, single sign-on, trusted-device bypasses, production secret distribution, or production deployment automation. Dispatch workflows, audit-reporting features, and operational dashboards remain separate tickets.
+This ticket does not provide self-service email recovery, SMS recovery, single sign-on, trusted-device bypasses, production secret distribution, retention automation, or production deployment. Dispatch workflows, audit exports, and operational dashboards remain separate tickets.
+
+## Audit implementation references
+
+- [RFC 8785: JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
+- [Node.js cryptography documentation](https://nodejs.org/api/crypto.html)
+- [Kysely transactions](https://kysely.dev/docs/getting-started)
+- [MySQL account-management statements](https://dev.mysql.com/doc/refman/8.4/en/account-management-statements.html)

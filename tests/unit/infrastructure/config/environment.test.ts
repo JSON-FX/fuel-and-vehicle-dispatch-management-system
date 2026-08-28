@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  parseAuditVerifierEnvironment,
+  parseAuditWorkerEnvironment,
   parseBootstrapEnvironment,
   parseBuildEnvironment,
   parseMigrationEnvironment,
@@ -34,6 +36,23 @@ const runtimeEnvironment = {
   AUTH_TOTP_ACTIVE_KEY_VERSION: '1',
   AUTH_TOTP_ENCRYPTION_KEYS: '{"1":"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="}',
   AUTH_RATE_LIMIT_HMAC_KEY: 'YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=',
+  AUDIT_DATABASE_NAME: 'fvdms_audit',
+  AUDIT_SINK_HOST: 'mysql',
+  AUDIT_SINK_PORT: '3306',
+  AUDIT_SINK_DATABASE_NAME: 'fvdms_audit_sink',
+  AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536',
+  AUDIT_CHAIN_BATCH_SIZE: '100',
+  AUDIT_SINK_BATCH_SIZE: '100',
+  AUDIT_POLL_INTERVAL_MS: '1000',
+  AUDIT_RETRY_BASE_MS: '1000',
+  AUDIT_RETRY_MAX_MS: '60000',
+  AUDIT_VERIFICATION_PAGE_SIZE: '500',
+  AUDIT_WORKER_DATABASE_USER: 'fvdms_audit_worker',
+  AUDIT_WORKER_DATABASE_PASSWORD: 'local-audit-worker-password',
+  AUDIT_SINK_DATABASE_USER: 'fvdms_audit_sink_writer',
+  AUDIT_SINK_DATABASE_PASSWORD: 'local-audit-sink-password',
+  AUDIT_VERIFIER_DATABASE_USER: 'fvdms_audit_verifier',
+  AUDIT_VERIFIER_DATABASE_PASSWORD: 'local-audit-verifier-password',
 };
 
 describe('environment parsing', () => {
@@ -71,7 +90,65 @@ describe('environment parsing', () => {
         },
         rateLimitHmacKey: 'YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=',
       },
+      audit: {
+        primarySchema: 'fvdms_audit',
+        sinkSchema: 'fvdms_audit_sink',
+        maxCanonicalPayloadBytes: 65536,
+        chainBatchSize: 100,
+        sinkBatchSize: 100,
+        pollIntervalMs: 1000,
+        retryBaseMs: 1000,
+        retryMaxMs: 60000,
+        verificationPageSize: 500,
+      },
     });
+  });
+
+  it('parses worker credentials into isolated primary and sink connections', () => {
+    const parsed = parseAuditWorkerEnvironment(runtimeEnvironment);
+
+    expect(parsed.primaryDatabase).toMatchObject({
+      host: 'mysql',
+      port: 3306,
+      name: 'fvdms_audit',
+      user: 'fvdms_audit_worker',
+      password: 'local-audit-worker-password',
+    });
+    expect(parsed.sinkDatabase).toMatchObject({
+      host: 'mysql',
+      port: 3306,
+      name: 'fvdms_audit_sink',
+      user: 'fvdms_audit_sink_writer',
+      password: 'local-audit-sink-password',
+    });
+  });
+
+  it('uses verifier credentials for read-only primary and sink connections', () => {
+    const parsed = parseAuditVerifierEnvironment(runtimeEnvironment);
+
+    expect(parsed.primaryDatabase.user).toBe('fvdms_audit_verifier');
+    expect(parsed.sinkDatabase.user).toBe('fvdms_audit_verifier');
+    expect(parsed.policy.verificationPageSize).toBe(500);
+  });
+
+  it('rejects a retry ceiling below the retry base', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        AUDIT_RETRY_BASE_MS: '2000',
+        AUDIT_RETRY_MAX_MS: '1000',
+      }),
+    ).toThrow('AUDIT_RETRY_MAX_MS must be greater than or equal to AUDIT_RETRY_BASE_MS.');
+  });
+
+  it('rejects the application identity as the sink writer outside tests', () => {
+    expect(() =>
+      parseAuditWorkerEnvironment({
+        ...runtimeEnvironment,
+        NODE_ENV: 'production',
+        AUDIT_SINK_DATABASE_USER: runtimeEnvironment.DATABASE_USER,
+      }),
+    ).toThrow('AUDIT_SINK_DATABASE_USER must differ from DATABASE_USER outside tests.');
   });
 
   it('rejects authentication keys that are not exactly 32 bytes', () => {
@@ -145,6 +222,14 @@ describe('environment parsing', () => {
         DATABASE_PASSWORD: 'local-app-password',
         MIGRATION_DATABASE_USER: 'fvdms_migrator',
         MIGRATION_DATABASE_PASSWORD: 'local-migrator-password',
+        AUDIT_DATABASE_NAME: 'fvdms_audit',
+        AUDIT_SINK_DATABASE_NAME: 'fvdms_audit_sink',
+        AUDIT_WORKER_DATABASE_USER: 'fvdms_audit_worker',
+        AUDIT_WORKER_DATABASE_PASSWORD: 'local-audit-worker-password',
+        AUDIT_SINK_DATABASE_USER: 'fvdms_audit_sink_writer',
+        AUDIT_SINK_DATABASE_PASSWORD: 'local-audit-sink-password',
+        AUDIT_VERIFIER_DATABASE_USER: 'fvdms_audit_verifier',
+        AUDIT_VERIFIER_DATABASE_PASSWORD: 'local-audit-verifier-password',
       }).administrator.password,
     ).toBe('');
   });

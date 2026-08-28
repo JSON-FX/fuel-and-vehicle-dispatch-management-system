@@ -55,7 +55,7 @@ function createLogin(user: UserAuthenticationRecord | null, passwordMatches = tr
       }),
       clear: async () => undefined,
     } as never,
-    securityEvents: { append: async () => undefined },
+    auditEvents: { append: async () => undefined },
   });
   let tokenNumber = 0;
   const login = new Login({

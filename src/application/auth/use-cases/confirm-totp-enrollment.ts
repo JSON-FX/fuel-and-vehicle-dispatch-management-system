@@ -1,5 +1,6 @@
 import type { LoginResult } from '@/application/auth/dto/authentication-dtos';
 import type { AuthTransaction } from '@/application/auth/ports/auth-transaction';
+import { buildAuthenticationAuditEvent } from '@/application/auth/services/auth-audit-events';
 import type { Clock } from '@/application/auth/ports/clock';
 import type { RateLimitKeyGenerator } from '@/application/auth/ports/rate-limit-repository';
 import type { SecretEncryptor } from '@/application/auth/ports/secret-encryptor';
@@ -92,16 +93,18 @@ export class ConfirmTotpEnrollment {
         throw new AuthenticationError();
       }
       await repositories.rateLimits.clear('TOTP', rateLimitKey);
-      await repositories.securityEvents.append({
-        publicId: this.dependencies.publicIds.generate().toString(),
-        type: 'auth.totp.enrolled',
-        actorPublicId: input.userPublicId,
-        targetPublicId: input.userPublicId,
-        requestId: input.requestId,
-        reasonCode: null,
-        metadata: { factorPublicId: factor.publicId },
-        occurredAt: at,
-      });
+      await repositories.auditEvents.append(
+        buildAuthenticationAuditEvent({
+          publicId: this.dependencies.publicIds.generate().toString(),
+          action: 'auth.totp.enrolled',
+          actorPublicId: input.userPublicId,
+          targetPublicId: input.userPublicId,
+          requestId: input.requestId,
+          reasonCode: null,
+          metadata: { factorPublicId: factor.publicId },
+          occurredAt: at,
+        }),
+      );
       return issueAuthenticatedSession({
         repositories,
         user: { ...user, mfaEnrolled: true },

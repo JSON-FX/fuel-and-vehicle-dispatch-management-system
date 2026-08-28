@@ -2,18 +2,29 @@ import type { Kysely } from 'kysely';
 
 import type { AuthRepositories } from '@/application/auth/ports/auth-transaction';
 import type { Database } from '@/infrastructure/database/types';
+import {
+  KyselyAuditOutboxStore,
+  type AuditOutboxStoreOptions,
+} from '@/infrastructure/database/audit/kysely-audit-outbox-store';
 
 import { KyselyAuthenticationChallengeRepository } from './kysely-authentication-challenge-repository';
 import { KyselyPasswordResetRepository } from './kysely-password-reset-repository';
 import { KyselyPermissionRepository } from './kysely-permission-repository';
 import { KyselyRateLimitRepository } from './kysely-rate-limit-repository';
 import { KyselyRoleRepository } from './kysely-role-repository';
-import { KyselySecurityEventStore } from './kysely-security-event-store';
 import { KyselySessionRepository } from './kysely-session-repository';
 import { KyselyTotpFactorRepository } from './kysely-totp-factor-repository';
 import { KyselyUserRepository } from './kysely-user-repository';
 
-export function createKyselyAuthRepositories(database: Kysely<Database>): AuthRepositories {
+const defaultAuditOptions: AuditOutboxStoreOptions = {
+  primarySchema: 'fvdms_audit',
+  maximumCanonicalPayloadBytes: 65_536,
+};
+
+export function createKyselyAuthRepositories(
+  database: Kysely<Database>,
+  auditOptions: AuditOutboxStoreOptions = defaultAuditOptions,
+): AuthRepositories {
   return Object.freeze({
     users: new KyselyUserRepository(database),
     roles: new KyselyRoleRepository(database),
@@ -23,6 +34,6 @@ export function createKyselyAuthRepositories(database: Kysely<Database>): AuthRe
     rateLimits: new KyselyRateLimitRepository(database),
     totpFactors: new KyselyTotpFactorRepository(database),
     passwordResets: new KyselyPasswordResetRepository(database),
-    securityEvents: new KyselySecurityEventStore(database),
+    auditEvents: new KyselyAuditOutboxStore(database, auditOptions),
   });
 }
