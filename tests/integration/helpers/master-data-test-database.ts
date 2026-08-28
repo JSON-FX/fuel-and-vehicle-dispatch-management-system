@@ -17,6 +17,9 @@ export async function prepareMasterDataDatabase(database: Kysely<Database>): Pro
 
 export async function resetMasterDataDatabase(database: Kysely<Database>): Promise<void> {
   await database.withSchema('fvdms_audit').deleteFrom('audit_outbox').execute();
+  await database.deleteFrom('fuel_ledger_entries').execute();
+  await database.deleteFrom('fuel_issuances').execute();
+  await database.deleteFrom('fuel_sequence_monthly').execute();
   await database.deleteFrom('budget_allocations').execute();
   await database.deleteFrom('vehicles').execute();
   await database.deleteFrom('drivers').execute();

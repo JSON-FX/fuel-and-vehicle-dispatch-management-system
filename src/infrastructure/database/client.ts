@@ -25,6 +25,7 @@ export function createMysqlPoolOptions(environment: DatabaseEnvironment): PoolOp
     supportBigNumbers: true,
     bigNumberStrings: true,
     decimalNumbers: false,
+    dateStrings: ['DATE'],
     timezone: 'Z',
     enableKeepAlive: true,
   };

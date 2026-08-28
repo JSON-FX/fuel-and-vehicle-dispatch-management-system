@@ -44,6 +44,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await database.deleteFrom('fuel_ledger_entries').execute();
+  await database.deleteFrom('fuel_issuances').execute();
+  await database.deleteFrom('fuel_sequence_monthly').execute();
   await database.deleteFrom('budget_allocations').execute();
   await database.deleteFrom('vehicles').execute();
   await database.deleteFrom('drivers').execute();

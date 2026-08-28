@@ -243,6 +243,9 @@ async function createUser(input: {
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
   await sql`delete from fvdms_audit.audit_outbox`.execute(target);
+  await sql`delete from fuel_ledger_entries`.execute(target);
+  await sql`delete from fuel_issuances`.execute(target);
+  await sql`delete from fuel_sequence_monthly`.execute(target);
   await sql`update authentication_settings
     set mfa_required = false, updated_by_user_id = null, updated_at = '2026-08-28 00:00:00.000000'`.execute(
     target,
