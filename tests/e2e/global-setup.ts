@@ -22,6 +22,11 @@ import { Quarter } from '@/domain/budget/value-objects/quarter';
 import { Driver } from '@/domain/driver/entities/driver';
 import { DriverContactNumber } from '@/domain/driver/value-objects/driver-contact-number';
 import { DriverName } from '@/domain/driver/value-objects/driver-name';
+import { DriverStatus } from '@/domain/driver/value-objects/driver-status';
+import { VehicleDispatch } from '@/domain/dispatch/entities/vehicle-dispatch';
+import { DispatchDate } from '@/domain/dispatch/value-objects/dispatch-date';
+import { OdometerReading } from '@/domain/dispatch/value-objects/odometer-reading';
+import { PassengerCount } from '@/domain/dispatch/value-objects/passenger-count';
 import { Office } from '@/domain/office/entities/office';
 import { OfficeAbbreviation } from '@/domain/office/value-objects/office-abbreviation';
 import { OfficeName } from '@/domain/office/value-objects/office-name';
@@ -32,6 +37,7 @@ import { ModelBrand } from '@/domain/vehicle/value-objects/model-brand';
 import { PlateNumber } from '@/domain/vehicle/value-objects/plate-number';
 import { VehicleRemarks } from '@/domain/vehicle/value-objects/vehicle-remarks';
 import { VehicleType } from '@/domain/vehicle/value-objects/vehicle-type';
+import { VehicleStatus } from '@/domain/vehicle/value-objects/vehicle-status';
 import { createKyselyAuthRepositories } from '@/infrastructure/database/auth/create-kysely-auth-repositories';
 import { KyselyAuthTransaction } from '@/infrastructure/database/auth/kysely-auth-transaction';
 import { KyselyAuditChainRepository } from '@/infrastructure/database/audit/kysely-audit-chain-repository';
@@ -39,11 +45,13 @@ import { KyselyAuditSink } from '@/infrastructure/database/audit/kysely-audit-si
 import { KyselyAuditVerificationRepository } from '@/infrastructure/database/audit/kysely-audit-verification-repository';
 import { createDatabaseClient } from '@/infrastructure/database/client';
 import { createKyselyBudgetRepositories } from '@/infrastructure/database/budget/create-kysely-budget-repositories';
+import { createKyselyDispatchRepositories } from '@/infrastructure/database/dispatch/create-kysely-dispatch-repositories';
 import { createKyselyMasterDataRepositories } from '@/infrastructure/database/master-data/create-kysely-master-data-repositories';
 import { createMigrator } from '@/infrastructure/database/migrator';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
 
 import { credentials } from './fixtures/auth';
+import { masterDataFixtureIds } from './fixtures/master-data';
 
 const encryptionKey = Buffer.alloc(32, 11).toString('base64');
 const hmacKey = Buffer.alloc(32, 12).toString('base64');
@@ -243,7 +251,7 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
         });
       }
     }
-    const offices = await seedMasterData(
+    const masterData = await seedMasterData(
       database,
       userPublicIds.get(credentials.manager.username)!,
       publicIds,
@@ -251,9 +259,15 @@ async function prepareDatabase(container: StartedMySqlContainer): Promise<void> 
     );
     await seedBudgetAllocations(
       database,
-      offices,
+      masterData.offices,
       userPublicIds.get(credentials.budgetOfficer.username)!,
       publicIds,
+      now,
+    );
+    await seedDispatchEvidence(
+      database,
+      masterData,
+      userPublicIds.get(credentials.standard.username)!,
       now,
     );
     await seedAuditEvidence(database, userPublicIds.get(credentials.auditor.username)!);
@@ -267,7 +281,7 @@ async function seedMasterData(
   actorPublicId: string,
   publicIds: UuidV7Generator,
   createdAt: Date,
-): Promise<readonly Office[]> {
+): Promise<MasterDataFixtures> {
   const repositories = createKyselyMasterDataRepositories(database);
   const actor = PublicId.from(actorPublicId);
   const deletedAt = new Date(createdAt.getTime() + 1_000);
@@ -285,7 +299,9 @@ async function seedMasterData(
   const drivers = ['Alex Rivera', 'Casey Santos', 'Archived Driver'].map(
     (name, index) =>
       new Driver({
-        publicId: PublicId.from(publicIds.generate().toString()),
+        publicId: PublicId.from(
+          index === 1 ? masterDataFixtureIds.inactiveDriver : publicIds.generate().toString(),
+        ),
         name: DriverName.from(name),
         contactNumber: DriverContactNumber.optional(`+63 917 000 10${index}`),
         createdAt,
@@ -297,9 +313,11 @@ async function seedMasterData(
     ['Isuzu N-Series', 'Truck', 'FVD 102'],
     ['Archived Van', 'Van', 'FVD 103'],
   ].map(
-    ([modelBrand, vehicleType, plateNumber]) =>
+    ([modelBrand, vehicleType, plateNumber], index) =>
       new Vehicle({
-        publicId: PublicId.from(publicIds.generate().toString()),
+        publicId: PublicId.from(
+          index === 1 ? masterDataFixtureIds.unserviceableVehicle : publicIds.generate().toString(),
+        ),
         modelBrand: ModelBrand.from(modelBrand!),
         vehicleType: VehicleType.from(vehicleType!),
         plateNumber: PlateNumber.from(plateNumber!),
@@ -314,14 +332,55 @@ async function seedMasterData(
   for (const vehicle of vehicles) await repositories.vehicles.insert(vehicle);
 
   offices[1]!.changeStatus(OfficeStatus.inactive(), deletedAt);
+  drivers[1]!.changeStatus(DriverStatus.inactive(), deletedAt);
+  vehicles[1]!.changeStatus(VehicleStatus.unserviceable(), deletedAt);
   await repositories.offices.updateStatus(offices[1]!);
+  await repositories.drivers.updateStatus(drivers[1]!);
+  await repositories.vehicles.updateStatus(vehicles[1]!);
   offices[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test office' });
   drivers[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test driver' });
   vehicles[2]!.softDelete({ at: deletedAt, actorPublicId: actor, reason: 'Archived test vehicle' });
   await repositories.offices.softDelete(offices[2]!);
   await repositories.drivers.softDelete(drivers[2]!);
   await repositories.vehicles.softDelete(vehicles[2]!);
-  return offices;
+  return { offices, drivers, vehicles };
+}
+
+interface MasterDataFixtures {
+  readonly offices: readonly Office[];
+  readonly drivers: readonly Driver[];
+  readonly vehicles: readonly Vehicle[];
+}
+
+async function seedDispatchEvidence(
+  database: ReturnType<typeof createDatabaseClient>,
+  masterData: MasterDataFixtures,
+  actorPublicId: string,
+  createdAt: Date,
+): Promise<void> {
+  const dispatchedAt = new Date(createdAt.getTime() + 1_000);
+  const completedAt = new Date(createdAt.getTime() + 2_000);
+  const dispatch = new VehicleDispatch({
+    publicId: PublicId.from('019e0000-0000-7007-8000-000000000001'),
+    entryDate: DispatchDate.from('2026-08-28'),
+    travelDate: DispatchDate.from('2026-08-28'),
+    driverPublicId: masterData.drivers[2]!.publicId,
+    vehiclePublicId: masterData.vehicles[2]!.publicId,
+    requestingOfficePublicId: masterData.offices[2]!.publicId,
+    destination: 'Archived District Warehouse',
+    purpose: 'Historical label retention verification',
+    odoBefore: OdometerReading.from('500.0'),
+    passengerCount: PassengerCount.from(2),
+    createdByActorPublicId: PublicId.from(actorPublicId),
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const repository = createKyselyDispatchRepositories(database).dispatches;
+  await repository.insert(dispatch);
+  dispatch.markDispatched(dispatchedAt);
+  await repository.updateLifecycle(dispatch);
+  dispatch.complete(OdometerReading.from('512.5'), completedAt);
+  await repository.updateLifecycle(dispatch);
 }
 
 async function seedBudgetAllocations(

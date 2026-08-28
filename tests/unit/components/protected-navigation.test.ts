@@ -10,6 +10,7 @@ import {
 const fullAccess: ProtectedNavigationAccess = {
   audit: true,
   budget: true,
+  dispatch: true,
   drivers: true,
   fuel: true,
   offices: true,
@@ -29,6 +30,7 @@ describe('protected navigation', () => {
     );
 
     expect(html).toContain('Operations');
+    expect(html).toContain('Vehicle dispatches');
     expect(html).toContain('Master data');
     expect(html).toContain('Administration');
     expect(html).toContain('Oversight');
@@ -43,6 +45,7 @@ describe('protected navigation', () => {
           ...fullAccess,
           audit: false,
           budget: false,
+          dispatch: false,
           drivers: false,
           offices: false,
           vehicles: false,

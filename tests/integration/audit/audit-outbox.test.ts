@@ -37,6 +37,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`delete from fvdms_audit.audit_outbox`.execute(database);
+  await sql`delete from vehicle_dispatches`.execute(database);
   await sql`delete from fuel_ledger_entries`.execute(database);
   await sql`delete from fuel_issuances`.execute(database);
   await sql`delete from fuel_sequence_monthly`.execute(database);

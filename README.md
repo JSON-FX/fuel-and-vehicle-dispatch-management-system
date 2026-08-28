@@ -209,6 +209,55 @@ pnpm exec playwright test --project=chromium tests/e2e/fuel-issuances.spec.ts te
 pnpm validate
 ```
 
+## Vehicle dispatch workflow
+
+Users with `dispatch.read` review records at `/dispatches` and opaque-ID detail routes.
+Dispatch Officers use `dispatch.create` to prepare drafts and `dispatch.update` to edit or
+dispatch them. Completion requires `dispatch.complete`. Cancellation requires the independent
+`dispatch.cancel` permission.
+
+The collection API is `/api/dispatches`. Item reads and complete draft replacements use
+`/api/dispatches/{publicId}`. The lifecycle actions are:
+
+- `POST /api/dispatches/{publicId}/dispatch` with an empty JSON object.
+- `POST /api/dispatches/{publicId}/complete` with the final odometer as a decimal string.
+- `POST /api/dispatches/{publicId}/cancel` with a 10-to-500-character reason.
+
+Create forms load current operational offices, drivers, and vehicles through
+`GET /api/dispatch-preparation-options`. Reference selection is advisory. Create, draft update,
+and dispatch commands recheck the selected office, driver, and vehicle inside their MySQL
+transaction. Completion and cancellation do not reject a historical record merely because a
+linked reference later became inactive, unserviceable, or deleted.
+
+Every record starts as DRAFT. Draft details are editable until the explicit dispatch action.
+The accepted lifecycle is:
+
+```text
+DRAFT ──> DISPATCHED ──> COMPLETED
+  │            │
+  └────────────┴───────> CANCELLED
+```
+
+COMPLETED and CANCELLED are terminal. Cancellation records a normalized reason and actor.
+Completion records an exact final odometer. Initial and final readings use `DECIMAL(12,1)` and
+remain decimal strings through the browser, API, domain, and database. Distance is derived with
+exact decimal subtraction and is never persisted.
+
+FVD-007 does not enforce travel-date ordering or odometer continuity across separate records.
+Driver and vehicle schedule conflicts, availability warnings, trip start and end capture, and
+conflict overrides remain deferred to FVD-008. Migration
+`20260828_000008_create_dispatch_workflow` includes nullable future travel-time columns and
+schedule-supporting indexes without persisting a conflict result.
+
+Validate the focused module with:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts tests/unit/domain/dispatch tests/unit/application/dispatch tests/unit/lib/dispatch tests/unit/app/api/dispatches tests/unit/components/dispatch-components.test.ts
+pnpm exec vitest run --config vitest.integration.config.ts tests/integration/dispatch
+pnpm exec playwright test --project=chromium tests/e2e/dispatches.spec.ts tests/e2e/dispatch-permissions.spec.ts tests/e2e/accessibility.spec.ts
+pnpm validate
+```
+
 ## Database operations
 
 The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates its application database, primary audit schema, secondary audit schema, and dedicated accounts.

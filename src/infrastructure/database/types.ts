@@ -265,6 +265,32 @@ export interface FuelLedgerEntriesTable {
   created_at: CreatedTimestamp;
 }
 
+export interface VehicleDispatchesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  driver_id: string;
+  vehicle_id: string;
+  requesting_office_id: string;
+  entry_date: CivilDate;
+  travel_date: CivilDate;
+  travel_start_at: NullableTimestamp;
+  travel_end_at: NullableTimestamp;
+  destination: string;
+  purpose: string;
+  odo_before: DecimalString;
+  odo_after: DecimalString | null;
+  passenger_count: number;
+  status: 'DRAFT' | 'DISPATCHED' | 'COMPLETED' | 'CANCELLED';
+  created_by_user_id: string;
+  dispatched_at: NullableTimestamp;
+  completed_at: NullableTimestamp;
+  cancelled_at: NullableTimestamp;
+  cancelled_by_user_id: string | null;
+  cancellation_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -287,6 +313,7 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   fuel_sequence_monthly: FuelSequenceMonthlyTable;
   fuel_issuances: FuelIssuancesTable;
   fuel_ledger_entries: FuelLedgerEntriesTable;
+  vehicle_dispatches: VehicleDispatchesTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

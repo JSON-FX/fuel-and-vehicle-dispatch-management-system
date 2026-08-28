@@ -137,8 +137,114 @@ test('fuel pages remain accessible across responsive, dark, reduced-motion, and 
   expect(await hasNoPageOverflow(page)).toBe(true);
 });
 
+test('dispatch pages and lifecycle dialogs remain accessible in every supported state', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+  await login(page, credentials.standard);
+  await page.goto('/dispatches');
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await expect(
+    page.getByRole('heading', { name: 'Vehicle dispatches', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('table')).toBeHidden();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+
+  await page.goto('/dispatches/new');
+  await expect(page.getByRole('heading', { name: 'New dispatch' })).toBeVisible();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+
+  const csrfToken = await readCsrfToken(page);
+  const optionsResponse = await page.request.get('/api/dispatch-preparation-options');
+  const options = (await optionsResponse.json()) as {
+    data: {
+      offices: readonly { publicId: string }[];
+      drivers: readonly { publicId: string }[];
+      vehicles: readonly { publicId: string }[];
+    };
+  };
+  const created = await page.request.post('/api/dispatches', {
+    data: {
+      entryDate: '2026-08-29',
+      travelDate: '2026-09-02',
+      driverPublicId: options.data.drivers[0]!.publicId,
+      vehiclePublicId: options.data.vehicles[0]!.publicId,
+      requestingOfficePublicId: options.data.offices[0]!.publicId,
+      destination: 'Accessibility verification route',
+      purpose: 'Validate dispatch views and lifecycle dialogs',
+      odoBefore: '2000.0',
+      passengerCount: 2,
+    },
+    headers: { origin: 'http://localhost:3100', 'x-csrf-token': csrfToken },
+  });
+  expect(created.status()).toBe(201);
+  const dispatchId = ((await created.json()) as { data: { publicId: string } }).data.publicId;
+  await page.goto(`/dispatches/${dispatchId}`);
+  await expect(
+    page.getByRole('heading', { name: 'Accessibility verification route' }),
+  ).toBeVisible();
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+
+  const dispatchTrigger = page.getByRole('button', { name: 'Dispatch vehicle' });
+  await dispatchTrigger.focus();
+  await page.keyboard.press('Enter');
+  let dialog = page.getByRole('alertdialog', { name: 'Dispatch this vehicle?' });
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Keep draft' }).click();
+  await expect(dispatchTrigger).toBeFocused();
+
+  await page.getByRole('button', { name: 'Cancel dispatch' }).click();
+  dialog = page.getByRole('alertdialog', { name: 'Cancel this dispatch?' });
+  await expect(dialog.getByLabel('Reason')).toBeFocused();
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Keep dispatch' }).click();
+
+  await dispatchTrigger.click();
+  dialog = page.getByRole('alertdialog', { name: 'Dispatch this vehicle?' });
+  await dialog.getByRole('button', { name: 'Confirm dispatch' }).click();
+  await expect(page.getByText('Dispatched', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Complete dispatch' }).click();
+  dialog = page.getByRole('alertdialog', { name: 'Complete this dispatch?' });
+  await expect(dialog.getByLabel('Final odometer (km)')).toBeFocused();
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Keep active' }).click();
+
+  await page.getByRole('button', { name: 'Cancel dispatch' }).click();
+  dialog = page.getByRole('alertdialog', { name: 'Cancel this dispatch?' });
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+  await dialog.getByRole('button', { name: 'Keep dispatch' }).click();
+
+  for (const width of [768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/dispatches');
+    expect(await hasNoPageOverflow(page)).toBe(true);
+  }
+  await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+
+  await page.setViewportSize({ width: 750, height: 900 });
+  await page.goto('/dispatches');
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = '2';
+  });
+  await expect(
+    page.getByRole('heading', { name: 'Vehicle dispatches', exact: true }),
+  ).toBeVisible();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+});
+
 function hasNoPageOverflow(page: import('@playwright/test').Page): Promise<boolean> {
   return page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   );
+}
+
+async function readCsrfToken(page: import('@playwright/test').Page): Promise<string> {
+  const response = await page.request.get('/api/me');
+  return ((await response.json()) as { data: { csrfToken: string } }).data.csrfToken;
 }
