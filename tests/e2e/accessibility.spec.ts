@@ -104,6 +104,39 @@ test('budget allocations support keyboard, themes, reduced motion, zoom, and tar
   expect(await hasNoPageOverflow(page)).toBe(true);
 });
 
+test('fuel pages remain accessible across responsive, dark, reduced-motion, and zoom states', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+  await login(page, credentials.psmd);
+  await page.goto('/fuel-issuances');
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await expect(page.getByRole('heading', { name: 'Fuel issuances', exact: true })).toBeVisible();
+  await expect(page.locator('table')).toBeHidden();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+
+  await page.goto('/fuel-issuances/new');
+  await expect(page.getByRole('heading', { name: 'New fuel issuance' })).toBeVisible();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+  expect((await wcagAxe(page).analyze()).violations).toEqual([]);
+
+  for (const width of [768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/fuel-issuances');
+    expect(await hasNoPageOverflow(page)).toBe(true);
+  }
+
+  await page.setViewportSize({ width: 750, height: 900 });
+  await page.goto('/fuel-issuances/balances');
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = '2';
+  });
+  await expect(page.getByRole('heading', { name: 'Fuel balances' })).toBeVisible();
+  expect(await hasNoPageOverflow(page)).toBe(true);
+});
+
 function hasNoPageOverflow(page: import('@playwright/test').Page): Promise<boolean> {
   return page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

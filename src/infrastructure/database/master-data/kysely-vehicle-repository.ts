@@ -191,6 +191,8 @@ export class KyselyVehicleRepository implements VehicleRepository {
         publicId: vehicle.publicId,
         label: `${vehicle.plateNumber} · ${vehicle.modelBrand}`,
         plateNumber: vehicle.plateNumber,
+        modelBrand: vehicle.modelBrand,
+        vehicleType: vehicle.vehicleType,
       })),
       nextCursor: page.nextCursor,
       previousCursor: page.previousCursor,

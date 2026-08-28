@@ -133,6 +133,24 @@ green and red without a text label or a distinct icon.
 - Right-align numeric values and use consistent precision for money and quantities.
 - Show loading, empty, error, filtered-empty, and permission-denied states explicitly.
 
+## Application shell navigation
+
+- Use a 272-pixel sidebar at 1024 pixels and wider, with a toggle beside the FVDMS title.
+- Collapse the desktop sidebar into a 72-pixel icon rail when the user requests more space.
+- Use the same navigation inside a left-side modal drawer below 1024 pixels.
+- Keep Operations and Oversight destinations visible when the user has access.
+- Put Master data and Administration destinations in collapsible disclosure groups.
+- Open the disclosure group containing the current route and mark its link with
+  `aria-current="page"`.
+- Keep Account and Sign out separated from application destinations at the bottom.
+- Filter destinations from server-derived permissions. Navigation visibility never replaces
+  page or API authorization.
+- Use an icon and text label for every expanded destination.
+- In the compact rail, keep every permitted destination directly clickable. Preserve accessible
+  text, a title tooltip, group separators, and active-route emphasis.
+- Preserve 44-by-44-pixel targets, visible focus, Escape dismissal, and focus return in the
+  mobile drawer.
+
 ## Responsive rules
 
 - Start with mobile styles, then enhance at 640, 768, and 1024 pixels.

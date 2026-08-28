@@ -21,6 +21,8 @@ type DatabaseBoolean = ColumnType<number, number | boolean, number | boolean>;
 type CreatedTimestamp = ColumnType<Date, Date | string, never>;
 type UpdatedTimestamp = ColumnType<Date, Date | string, Date | string>;
 type NullableTimestamp = ColumnType<Date | null, Date | string | null, Date | string | null>;
+type CivilDate = ColumnType<string, string, string>;
+type DecimalString = ColumnType<string, string, string>;
 
 export interface UsersTable {
   id: Generated<string>;
@@ -213,6 +215,56 @@ export interface BudgetAllocationsTable {
   updated_at: UpdatedTimestamp;
 }
 
+export interface FuelSequenceMonthlyTable {
+  id: Generated<string>;
+  sequence_year: number;
+  sequence_month: number;
+  last_number: number;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface FuelIssuancesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  ris_number: string | null;
+  purchase_request_number: string;
+  entry_date: CivilDate;
+  driver_id: string;
+  destination: string;
+  purpose: string;
+  vehicle_id: string;
+  requested_liters: DecimalString | null;
+  is_full_tank: DatabaseBoolean;
+  issued_liters: DecimalString | null;
+  unit_price: DecimalString;
+  total_amount: DecimalString | null;
+  budget_allocation_id: string;
+  fuel_type: 'DIESEL' | 'GASOLINE';
+  status: 'DRAFT' | 'POSTED' | 'VOIDED';
+  created_by_user_id: string;
+  posted_at: NullableTimestamp;
+  voided_at: NullableTimestamp;
+  voided_by_user_id: string | null;
+  void_reason: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface FuelLedgerEntriesTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  fuel_issuance_id: string | null;
+  fuel_type: 'DIESEL' | 'GASOLINE';
+  transaction_type: 'OPENING' | 'RECEIPT' | 'ISSUANCE' | 'ADJUSTMENT';
+  quantity: DecimalString;
+  signed_quantity: DecimalString;
+  effective_date: CivilDate;
+  reference: string;
+  occurred_at: CreatedTimestamp;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -232,6 +284,9 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   drivers: DriversTable;
   vehicles: VehiclesTable;
   budget_allocations: BudgetAllocationsTable;
+  fuel_sequence_monthly: FuelSequenceMonthlyTable;
+  fuel_issuances: FuelIssuancesTable;
+  fuel_ledger_entries: FuelLedgerEntriesTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

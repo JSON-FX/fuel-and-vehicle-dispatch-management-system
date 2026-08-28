@@ -152,6 +152,8 @@ describe('authentication and RBAC migration', () => {
 
   it('backfills legacy security events with exact identities and restores them on rollback', async () => {
     const migrator = createMigrator(database);
+    const fuelRollback = await migrator.migrateDown();
+    expect(fuelRollback.error).toBeUndefined();
     const settingsRollback = await migrator.migrateDown();
     expect(settingsRollback.error).toBeUndefined();
     const budgetRollback = await migrator.migrateDown();
@@ -237,6 +239,8 @@ describe('authentication and RBAC migration', () => {
       metadata: { changedFields: 2 },
     });
 
+    const fuelRollbackWithData = await migrator.migrateDown();
+    expect(fuelRollbackWithData.error).toBeUndefined();
     const settingsRollbackWithData = await migrator.migrateDown();
     expect(settingsRollbackWithData.error).toBeUndefined();
     const budgetRollbackWithData = await migrator.migrateDown();
