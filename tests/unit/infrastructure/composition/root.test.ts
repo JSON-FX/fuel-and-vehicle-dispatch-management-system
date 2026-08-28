@@ -83,6 +83,12 @@ describe('application composition', () => {
         composition.searchAuditEvents,
         composition.getAuditEvent,
         composition.getLatestAuditVerification,
+        composition.createOffice,
+        composition.listOperationalOfficeOptions,
+        composition.createDriver,
+        composition.listOperationalDriverOptions,
+        composition.createVehicle,
+        composition.listOperationalVehicleOptions,
       ].every((service) => typeof service.execute === 'function'),
     ).toBe(true);
   });

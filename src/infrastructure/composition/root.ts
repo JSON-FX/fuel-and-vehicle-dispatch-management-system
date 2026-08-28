@@ -32,6 +32,8 @@ import { UpdateUser } from '@/application/auth/use-cases/update-user';
 import { GetHealthStatus } from '@/application/health/use-cases/get-health-status';
 import type { AuditWebComposition } from '@/infrastructure/composition/audit';
 import { createAuditWebComposition } from '@/infrastructure/composition/audit';
+import type { MasterDataWebComposition } from '@/infrastructure/composition/master-data';
+import { createMasterDataWebComposition } from '@/infrastructure/composition/master-data';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PasswordPolicy } from '@/domain/user/value-objects/password-policy';
@@ -52,7 +54,7 @@ import { createPinoLogger } from '@/infrastructure/logging/pino-logger';
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=19456,p=1,t=2$s2r5DIVnB+eVyeEK/iQvPQ$t/XFGhEWgUdX+otDbdK8TKnVKv/0KQMpzSQq5DEahaU';
 
-export interface ApplicationComposition extends AuditWebComposition {
+export interface ApplicationComposition extends AuditWebComposition, MasterDataWebComposition {
   readonly getHealthStatus: GetHealthStatus;
   readonly logger: Logger;
   readonly publicIdGenerator: PublicIdGenerator;
@@ -124,6 +126,10 @@ function buildApplicationComposition(
   );
   const common = { transaction, publicIds, clock } as const;
   const auditWeb = createAuditWebComposition(database, auditOptions, { publicIds, clock });
+  const masterDataWeb = createMasterDataWebComposition(database, auditOptions, {
+    publicIds,
+    clock,
+  });
   const sessionPolicy = {
     standardIdleTimeoutSeconds: configuration.auth.standardIdleTimeoutSeconds,
     privilegedIdleTimeoutSeconds: configuration.auth.privilegedIdleTimeoutSeconds,
@@ -144,6 +150,7 @@ function buildApplicationComposition(
 
   return Object.freeze({
     ...auditWeb,
+    ...masterDataWeb,
     getHealthStatus: new GetHealthStatus(
       new KyselyHealthCheckRepository(database, configuration.database.queryTimeoutMs),
     ),

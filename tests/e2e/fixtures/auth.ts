@@ -14,6 +14,7 @@ export const credentials = {
     password: 'AdministratorPassword123!',
     secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
   },
+  manager: { username: 'reference.manager.e2e', password: 'ReferenceManager123!' },
   viewer: { username: 'viewer.e2e', password: 'ViewerPassword123!' },
   auditor: { username: 'auditor.e2e', password: 'AuditorPassword123!' },
   auditReader: { username: 'audit.reader.e2e', password: 'AuditReaderPassword123!' },

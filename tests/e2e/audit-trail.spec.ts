@@ -94,7 +94,9 @@ test('audit trail remains accessible with keyboard, zoom, themes, and reduced mo
   await login(page, credentials.auditor);
   await page.goto('/audit');
 
-  await page.getByLabel('From').focus();
+  const fromFilter = page.getByRole('textbox', { name: 'From', exact: true });
+  await expect(fromFilter).toBeVisible();
+  await fromFilter.focus();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('textbox', { name: 'To', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');

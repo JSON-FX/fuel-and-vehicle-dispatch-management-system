@@ -190,11 +190,11 @@ describe('baseline migrations', () => {
     expect(result.rows[0]?.last_record_hash).toEqual(Buffer.alloc(32));
   });
 
-  it('rolls back and reapplies only the latest audit migration', async () => {
+  it('rolls back and reapplies only the latest master-data migration', async () => {
     const migrator = createMigrator(database);
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
@@ -206,9 +206,16 @@ describe('baseline migrations', () => {
     `.execute(database);
     expect(afterRollback.rows.map((row) => row.TABLE_NAME).sort()).toEqual([
       'application_metadata',
-      'auth_security_events',
       'users',
     ]);
+
+    const masterDataTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
+      select TABLE_NAME
+      from information_schema.tables
+      where table_schema = database()
+        and table_name in ('offices', 'drivers', 'vehicles')
+    `.execute(database);
+    expect(masterDataTablesAfterRollback.rows).toEqual([]);
 
     const auditTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
       select TABLE_NAME
@@ -216,12 +223,12 @@ describe('baseline migrations', () => {
       where table_schema in ('fvdms_audit', 'fvdms_audit_sink')
         and table_name like 'audit_%'
     `.execute(database);
-    expect(auditTablesAfterRollback.rows).toEqual([]);
+    expect(auditTablesAfterRollback.rows.length).toBeGreaterThan(0);
 
     const reapply = await migrator.migrateToLatest();
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 });
