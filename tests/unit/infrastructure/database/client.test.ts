@@ -65,6 +65,7 @@ describe('MySQL pool options', () => {
     expect(options.connectTimeout).toBe(5_000);
     expect(options.waitForConnections).toBe(true);
     expect(options.queueLimit).toBe(0);
+    expect(options.dateStrings).toEqual(['DATE']);
   });
 
   it('creates lazy singleton runtime and migration clients', async () => {

@@ -13,6 +13,20 @@ describe('DecimalValue', () => {
     expect(right.toString()).toBe('0.2');
   });
 
+  it('adds, subtracts, negates, compares, and rounds without number coercion', () => {
+    const left = DecimalValue.from('10.005');
+    const right = DecimalValue.from('0.005');
+
+    expect(left.add(right).toString()).toBe('10.01');
+    expect(left.subtract(right).toString()).toBe('10');
+    expect(right.negate().toString()).toBe('-0.005');
+    expect(left.compare(right)).toBe(1);
+    expect(left.equals(DecimalValue.from('10.005'))).toBe(true);
+    expect(left.round(2).toFixed(2)).toBe('10.01');
+    expect(left.decimalPlaces()).toBe(3);
+    expect(left.isPositive()).toBe(true);
+  });
+
   it.each([0.1, Number.NaN, Number.POSITIVE_INFINITY])(
     'rejects JavaScript number input %s',
     (value) => {
@@ -20,7 +34,7 @@ describe('DecimalValue', () => {
     },
   );
 
-  it.each(['', ' ', 'NaN', 'Infinity', '1.2.3', ' 1.20 '])(
+  it.each(['', ' ', 'NaN', 'Infinity', '1.2.3', ' 1.20 ', '1e3', '.'])(
     'rejects malformed decimal input %j',
     (value) => {
       expect(() => DecimalValue.from(value)).toThrow(DomainError);

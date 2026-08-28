@@ -211,11 +211,11 @@ describe('baseline migrations', () => {
     ]);
   });
 
-  it('rolls back and reapplies only the latest authentication settings migration', async () => {
+  it('rolls back and reapplies only the latest fuel workflow migration', async () => {
     const migrator = createMigrator(database);
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
@@ -246,9 +246,16 @@ describe('baseline migrations', () => {
       select TABLE_NAME
       from information_schema.tables
       where table_schema = database()
-        and table_name in ('budget_allocations', 'authentication_settings')
+        and table_name in (
+          'budget_allocations',
+          'authentication_settings',
+          'fuel_sequence_monthly',
+          'fuel_issuances',
+          'fuel_ledger_entries'
+        )
     `.execute(database);
-    expect(latestTablesAfterRollback.rows.map((row) => row.TABLE_NAME)).toEqual([
+    expect(latestTablesAfterRollback.rows.map((row) => row.TABLE_NAME).sort()).toEqual([
+      'authentication_settings',
       'budget_allocations',
     ]);
 
@@ -264,6 +271,6 @@ describe('baseline migrations', () => {
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
   });
 });

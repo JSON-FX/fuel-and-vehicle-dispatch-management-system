@@ -109,6 +109,8 @@ describe('master-data migration', () => {
 
   it('preserves migration 000004 when rolling back 000005, then reapplies both', async () => {
     const migrator = createMigrator(database);
+    const fuelRollback = await migrator.migrateDown();
+    expect(fuelRollback.error).toBeUndefined();
     const settingsRollback = await migrator.migrateDown();
     expect(settingsRollback.error).toBeUndefined();
     const budgetRollback = await migrator.migrateDown();

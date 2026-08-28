@@ -167,6 +167,48 @@ pnpm exec playwright test --project=chromium tests/e2e/budget-allocations.spec.t
 pnpm validate
 ```
 
+## Fuel issuance workflow and balances
+
+Users with `fuel.read` review records at `/fuel-issuances`, detail routes, and the read-only
+balance page at `/fuel-issuances/balances`. PSMD staff use `fuel.create` to prepare and edit
+drafts. Posting requires `fuel.post`. Voiding requires the independent `fuel.void` permission,
+which remains assigned only to SUPER_ADMIN by default.
+
+The collection API is `/api/fuel-issuances`. Item reads and complete draft replacements use
+`/api/fuel-issuances/{publicId}`. Posting uses
+`POST /api/fuel-issuances/{publicId}/post` with an actual-liter decimal string. Voiding uses
+`POST /api/fuel-issuances/{publicId}/void` with a 10-to-500-character reason. Balance reads use
+`GET /api/fuel-balances?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` with an optional `fuelType`.
+Draft forms refresh eligible selectors through
+`GET /api/fuel-preparation-options?entryDate=YYYY-MM-DD`, guarded by `fuel.create`.
+
+Every record begins as DRAFT. Posting rechecks the driver, vehicle, allocation, allocation
+office, fiscal period, and lifecycle inside one MySQL transaction. It then reserves the
+entry-date monthly RIS, calculates the authoritative total, appends one negative ISSUANCE
+ledger row, and records one audit event. A failure rolls back every effect, including the RIS
+counter.
+
+Voiding preserves the posted record and its original negative ledger row. It appends one equal
+positive ADJUSTMENT and records the normalized reason. No ledger update or delete API exists.
+Balances use inclusive civil dates and may be negative. A negative balance is reported rather
+than blocking a posting.
+
+Apply migration `20260828_000007_create_fuel_workflow` through the normal Docker flow:
+
+```sh
+pnpm dev:up
+pnpm db:status
+```
+
+Validate the focused module with:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts tests/unit/domain/fuel tests/unit/application/fuel tests/unit/lib/fuel tests/unit/app/api/fuel-issuances tests/unit/components/fuel-issuance-components.test.ts
+pnpm exec vitest run --config vitest.integration.config.ts tests/integration/fuel
+pnpm exec playwright test --project=chromium tests/e2e/fuel-issuances.spec.ts tests/e2e/fuel-issuance-permissions.spec.ts tests/e2e/accessibility.spec.ts
+pnpm validate
+```
+
 ## Database operations
 
 The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates its application database, primary audit schema, secondary audit schema, and dedicated accounts.
