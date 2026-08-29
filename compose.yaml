@@ -21,6 +21,26 @@ services:
       DATABASE_POOL_MAX: '10'
       DATABASE_CONNECT_TIMEOUT_MS: '5000'
       DATABASE_QUERY_TIMEOUT_MS: '2000'
+      REPORTING_DATABASE_HOST: mysql
+      REPORTING_DATABASE_PORT: '3306'
+      REPORTING_DATABASE_NAME: fvdms
+      REPORTING_DATABASE_USER: fvdms_reporter
+      REPORTING_DATABASE_PASSWORD: local-fvdms-reporter-password
+      REPORTING_DATABASE_POOL_MIN: '0'
+      REPORTING_DATABASE_POOL_MAX: '3'
+      REPORTING_DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      REPORTING_DATABASE_QUERY_TIMEOUT_MS: '10000'
+      REPORTING_ALLOW_WRITER_ALIAS: 'false'
+      REPORT_EXPORT_STORAGE_ROOT: /var/lib/fvdms/exports
+      REPORT_EXPORT_POLL_INTERVAL_MS: '1000'
+      REPORT_EXPORT_SYNC_ROW_LIMIT: '1000'
+      REPORT_EXPORT_MAX_ROWS: '100000'
+      REPORT_EXPORT_MAX_BYTES: '52428800'
+      REPORT_EXPORT_TIMEOUT_MS: '900000'
+      REPORT_EXPORT_LEASE_MS: '960000'
+      REPORT_EXPORT_RETENTION_SECONDS: '604800'
+      REPORT_EXPORT_TOKEN_TTL_SECONDS: '300'
+      REPORT_EXPORT_STALE_TEMP_SECONDS: '3600'
       AUDIT_DATABASE_NAME: fvdms_audit
       AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
       AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536'
@@ -51,6 +71,7 @@ services:
       - node-modules:/app/node_modules
       - pnpm-store:/pnpm/store
       - next-cache:/app/.next
+      - report-exports:/var/lib/fvdms/exports
     healthcheck:
       test: ['CMD', 'curl', '--fail', '--silent', 'http://127.0.0.1:3000/api/health']
       interval: 10s
@@ -65,6 +86,66 @@ services:
       - 'traefik.http.routers.fvdms.tls=true'
       - 'traefik.http.routers.fvdms.service=fvdms'
       - 'traefik.http.services.fvdms.loadbalancer.server.port=3000'
+    networks:
+      - dev-net
+
+  reporting-worker:
+    build:
+      context: .
+      target: development
+    container_name: fvdms-reporting-worker
+    restart: unless-stopped
+    command: ['./scripts/reporting/worker.sh']
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      FVDMS_CONTAINER: '1'
+      PNPM_CONFIG_STORE_DIR: /pnpm/store
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_HOST: mysql
+      DATABASE_PORT: '3306'
+      DATABASE_NAME: fvdms
+      DATABASE_USER: fvdms_app
+      DATABASE_PASSWORD: local-fvdms-app-password
+      DATABASE_POOL_MIN: '0'
+      DATABASE_POOL_MAX: '4'
+      DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      DATABASE_QUERY_TIMEOUT_MS: '2000'
+      REPORTING_DATABASE_HOST: mysql
+      REPORTING_DATABASE_PORT: '3306'
+      REPORTING_DATABASE_NAME: fvdms
+      REPORTING_DATABASE_USER: fvdms_reporter
+      REPORTING_DATABASE_PASSWORD: local-fvdms-reporter-password
+      REPORTING_DATABASE_POOL_MIN: '0'
+      REPORTING_DATABASE_POOL_MAX: '3'
+      REPORTING_DATABASE_CONNECT_TIMEOUT_MS: '5000'
+      REPORTING_DATABASE_QUERY_TIMEOUT_MS: '10000'
+      REPORTING_ALLOW_WRITER_ALIAS: 'false'
+      REPORT_EXPORT_STORAGE_ROOT: /var/lib/fvdms/exports
+      REPORT_EXPORT_POLL_INTERVAL_MS: '1000'
+      REPORT_EXPORT_SYNC_ROW_LIMIT: '1000'
+      REPORT_EXPORT_MAX_ROWS: '100000'
+      REPORT_EXPORT_MAX_BYTES: '52428800'
+      REPORT_EXPORT_TIMEOUT_MS: '900000'
+      REPORT_EXPORT_LEASE_MS: '960000'
+      REPORT_EXPORT_RETENTION_SECONDS: '604800'
+      REPORT_EXPORT_TOKEN_TTL_SECONDS: '300'
+      REPORT_EXPORT_STALE_TEMP_SECONDS: '3600'
+      AUDIT_DATABASE_NAME: fvdms_audit
+      AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
+      AUDIT_MAX_CANONICAL_PAYLOAD_BYTES: '65536'
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - pnpm-store:/pnpm/store
+      - report-exports:/var/lib/fvdms/exports
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
     networks:
       - dev-net
 
@@ -177,6 +258,8 @@ services:
       MYSQL_ADMIN_PORT: '3306'
       MYSQL_ADMIN_USER: root
       MYSQL_ADMIN_PASSWORD: ''
+      REPORTING_DATABASE_USER: fvdms_reporter
+      REPORTING_DATABASE_PASSWORD: local-fvdms-reporter-password
       AUDIT_DATABASE_NAME: fvdms_audit
       AUDIT_SINK_DATABASE_NAME: fvdms_audit_sink
       AUDIT_WORKER_DATABASE_USER: fvdms_audit_worker
@@ -196,6 +279,7 @@ volumes:
   node-modules:
   pnpm-store:
   next-cache:
+  report-exports:
 
 networks:
   dev-net:

@@ -216,6 +216,8 @@ async function insertUser(username: string, passwordHash: string): Promise<strin
 
 async function clearAuthenticationData(target: Kysely<Database>): Promise<void> {
   await sql`delete from fvdms_audit.audit_outbox`.execute(target);
+  await sql`delete from export_download_tokens`.execute(target);
+  await sql`delete from export_jobs`.execute(target);
   await sql`delete from vehicle_dispatch_conflict_overrides`.execute(target);
   await sql`delete from vehicle_dispatches`.execute(target);
   await sql`delete from fuel_ledger_entries`.execute(target);

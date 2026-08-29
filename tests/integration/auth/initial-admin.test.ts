@@ -20,6 +20,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`delete from fvdms_audit.audit_outbox`.execute(database);
+  await sql`delete from export_download_tokens`.execute(database);
+  await sql`delete from export_jobs`.execute(database);
   await sql`delete from vehicle_dispatch_conflict_overrides`.execute(database);
   await sql`delete from vehicle_dispatches`.execute(database);
   await sql`delete from fuel_ledger_entries`.execute(database);

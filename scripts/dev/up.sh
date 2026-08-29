@@ -10,4 +10,4 @@ docker compose run --rm --no-deps --user root database-tools chown -R node:node 
 pnpm db:bootstrap
 pnpm db:migrate
 pnpm db:bootstrap
-docker compose up -d --wait app audit-worker
+docker compose up -d --wait app audit-worker reporting-worker

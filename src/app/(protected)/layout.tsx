@@ -15,6 +15,7 @@ export default async function ProtectedLayout({ children }: { readonly children:
     drivers: hasPermission(permissions, 'driver.manage'),
     fuel: hasPermission(permissions, 'fuel.read'),
     offices: hasPermission(permissions, 'office.manage'),
+    reports: hasPermission(permissions, 'fuel.read') || hasPermission(permissions, 'dispatch.read'),
     roles: hasPermission(permissions, 'role.read'),
     security: hasPermission(permissions, 'auth.settings.manage'),
     users: hasPermission(permissions, 'user.read'),

@@ -237,6 +237,8 @@ describe('dispatch workflow migration', () => {
 
   it('rolls migration 000009 down and reapplies it without disturbing dispatch workflow', async () => {
     const migrator = createMigrator(database);
+    const reportingRollback = await migrator.migrateDown();
+    expect(reportingRollback.error).toBeUndefined();
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
     const tablesAfterRollback = await sql<{ TABLE_NAME: string }>`

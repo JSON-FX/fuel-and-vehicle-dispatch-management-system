@@ -111,7 +111,7 @@ describe('container dependency recovery', () => {
         'pnpm db:bootstrap',
         'pnpm db:migrate',
         'pnpm db:bootstrap',
-        'docker compose up -d --wait app audit-worker',
+        'docker compose up -d --wait app audit-worker reporting-worker',
       ]);
     } finally {
       rmSync(temporaryDirectory, { recursive: true, force: true });

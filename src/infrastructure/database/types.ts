@@ -311,6 +311,56 @@ export interface VehicleDispatchConflictOverridesTable {
   created_at: CreatedTimestamp;
 }
 
+export interface ExportJobsTable {
+  id: Generated<string>;
+  public_id: Buffer;
+  requester_user_id: string;
+  report_type:
+    | 'FUEL_ISSUANCE'
+    | 'DISPATCH'
+    | 'FUEL_BY_OFFICE'
+    | 'FUEL_BY_VEHICLE'
+    | 'FUEL_TYPE_TOTALS'
+    | 'FUEL_AMOUNT_BY_PERIOD'
+    | 'DISPATCH_COUNT_BY_OFFICE'
+    | 'VEHICLE_UTILIZATION'
+    | 'BUDGET_ALLOCATION_ACTIVITY';
+  period_type: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'CUSTOM';
+  filters: ColumnType<JsonValue, string, string>;
+  filter_hash: Buffer;
+  mode: 'SYNCHRONOUS' | 'QUEUED';
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
+  estimated_rows: number;
+  actual_rows: number | null;
+  attempts: ColumnType<number, number | undefined, number>;
+  max_attempts: ColumnType<number, number | undefined, number>;
+  available_at: UpdatedTimestamp;
+  lease_owner: string | null;
+  lease_expires_at: NullableTimestamp;
+  started_at: NullableTimestamp;
+  finished_at: NullableTimestamp;
+  storage_key: string | null;
+  filename: string | null;
+  mime_type: string | null;
+  byte_length: ColumnType<string | null, string | number | null, string | number | null>;
+  sha256: Buffer | null;
+  file_expires_at: NullableTimestamp;
+  failure_code: string | null;
+  failure_message: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: UpdatedTimestamp;
+}
+
+export interface ExportDownloadTokensTable {
+  id: Generated<string>;
+  export_job_id: string;
+  user_id: string;
+  token_hash: Buffer;
+  expires_at: UpdatedTimestamp;
+  consumed_at: NullableTimestamp;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   application_metadata: ApplicationMetadataTable;
   users: UsersTable;
@@ -336,6 +386,8 @@ export interface Database extends AuditPrimaryDatabase, AuditSinkDatabase {
   vehicle_dispatches: VehicleDispatchesTable;
   dispatch_schedule_settings: DispatchScheduleSettingsTable;
   vehicle_dispatch_conflict_overrides: VehicleDispatchConflictOverridesTable;
+  export_jobs: ExportJobsTable;
+  export_download_tokens: ExportDownloadTokensTable;
 }
 
 export type DatabaseWithLegacyAuthSecurityEvents = Database;

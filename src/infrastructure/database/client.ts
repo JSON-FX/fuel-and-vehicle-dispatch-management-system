@@ -7,8 +7,10 @@ import {
   parseRuntimeEnvironment,
 } from '@/infrastructure/config/environment';
 import type { Database } from '@/infrastructure/database/types';
+import { MysqlMaxExecutionTimePlugin } from '@/infrastructure/database/reporting/mysql-max-execution-time-plugin';
 
 let runtimeDatabase: Kysely<Database> | undefined;
+let runtimeReportingDatabase: Kysely<Database> | undefined;
 let migrationDatabase: Kysely<Database> | undefined;
 
 export function createMysqlPoolOptions(environment: DatabaseEnvironment): PoolOptions {
@@ -53,12 +55,25 @@ export function getMigrationDatabase(
   return migrationDatabase;
 }
 
+export function getRuntimeReportingDatabase(
+  environment: Record<string, string | undefined> = process.env,
+): Kysely<Database> {
+  if (runtimeReportingDatabase === undefined) {
+    const configuration = parseRuntimeEnvironment(environment).reportingDatabase;
+    runtimeReportingDatabase = createDatabaseClient(configuration).withPlugin(
+      new MysqlMaxExecutionTimePlugin(configuration.queryTimeoutMs),
+    );
+  }
+  return runtimeReportingDatabase;
+}
+
 export async function destroyDatabaseClients(): Promise<void> {
-  const clients = [runtimeDatabase, migrationDatabase].filter(
+  const clients = [runtimeDatabase, runtimeReportingDatabase, migrationDatabase].filter(
     (database): database is Kysely<Database> => database !== undefined,
   );
 
   runtimeDatabase = undefined;
+  runtimeReportingDatabase = undefined;
   migrationDatabase = undefined;
   await Promise.all(clients.map(async (database) => database.destroy()));
 }

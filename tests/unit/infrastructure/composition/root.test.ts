@@ -106,6 +106,13 @@ describe('application composition', () => {
         composition.dispatchVehicle,
         composition.completeDispatch,
         composition.cancelDispatch,
+        composition.getReport,
+        composition.getReportFilterOptions,
+        composition.requestReportExport,
+        composition.listOwnExportJobs,
+        composition.getOwnExportJob,
+        composition.issueExportDownloadLink,
+        composition.downloadExport,
       ].every((service) => typeof service.execute === 'function'),
     ).toBe(true);
   });

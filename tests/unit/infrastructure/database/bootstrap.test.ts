@@ -4,6 +4,7 @@ import type { BootstrapEnvironment } from '@/infrastructure/config/environment';
 import {
   createAuditRuntimeGrantStatements,
   createBootstrapStatements,
+  createReportingRuntimeGrantStatements,
 } from '@/infrastructure/database/bootstrap';
 
 const environment: BootstrapEnvironment = {
@@ -11,6 +12,7 @@ const environment: BootstrapEnvironment = {
   database: { name: 'fvdms' },
   application: { user: 'fvdms_app', password: 'application-password' },
   migration: { user: 'fvdms_migrator', password: 'migration-password' },
+  reporting: { user: 'fvdms_reporter', password: 'reporter-password' },
   audit: {
     primarySchema: 'fvdms_audit',
     sinkSchema: 'fvdms_audit_sink',
@@ -21,7 +23,7 @@ const environment: BootstrapEnvironment = {
 };
 
 describe('database bootstrap statements', () => {
-  it('creates all three databases and five least-privilege users idempotently', () => {
+  it('creates all three databases and six least-privilege users idempotently', () => {
     const statements = createBootstrapStatements(environment);
     const sql = statements.join('\n');
 
@@ -30,6 +32,7 @@ describe('database bootstrap statements', () => {
     expect(sql).toContain('CREATE DATABASE IF NOT EXISTS `fvdms_audit_sink`');
     expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_app'@'%'");
     expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_migrator'@'%'");
+    expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_reporter'@'%'");
     expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_audit_worker'@'%'");
     expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_audit_sink_writer'@'%'");
     expect(sql).toContain("CREATE USER IF NOT EXISTS 'fvdms_audit_verifier'@'%'");
@@ -37,6 +40,7 @@ describe('database bootstrap statements', () => {
     for (const user of [
       'fvdms_app',
       'fvdms_migrator',
+      'fvdms_reporter',
       'fvdms_audit_worker',
       'fvdms_audit_sink_writer',
       'fvdms_audit_verifier',
@@ -44,6 +48,27 @@ describe('database bootstrap statements', () => {
       expect(sql).toContain(`ALTER USER '${user}'@'%' IDENTIFIED BY`);
       expect(sql).toContain(`REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${user}'@'%'`);
     }
+  });
+
+  it('grants the reporter read-only access to exact reporting source tables', () => {
+    const statements = createReportingRuntimeGrantStatements(environment);
+
+    expect(statements).toHaveLength(6);
+    expect(statements).toEqual(
+      expect.arrayContaining([
+        "GRANT SELECT ON `fvdms`.`offices` TO 'fvdms_reporter'@'%'",
+        "GRANT SELECT ON `fvdms`.`drivers` TO 'fvdms_reporter'@'%'",
+        "GRANT SELECT ON `fvdms`.`vehicles` TO 'fvdms_reporter'@'%'",
+        "GRANT SELECT ON `fvdms`.`budget_allocations` TO 'fvdms_reporter'@'%'",
+        "GRANT SELECT ON `fvdms`.`fuel_issuances` TO 'fvdms_reporter'@'%'",
+        "GRANT SELECT ON `fvdms`.`vehicle_dispatches` TO 'fvdms_reporter'@'%'",
+      ]),
+    );
+    expect(statements.join('\n')).not.toMatch(
+      /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|REFERENCES)\b/,
+    );
+    expect(statements.join('\n')).not.toContain('export_jobs');
+    expect(statements.join('\n')).not.toContain('audit_');
   });
 
   it('gives the migrator data and schema control without granting other accounts broad audit access', () => {

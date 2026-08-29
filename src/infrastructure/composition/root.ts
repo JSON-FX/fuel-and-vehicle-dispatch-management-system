@@ -42,6 +42,8 @@ import type { FuelWebComposition } from '@/infrastructure/composition/fuel';
 import { createFuelWebComposition } from '@/infrastructure/composition/fuel';
 import type { DispatchWebComposition } from '@/infrastructure/composition/dispatch';
 import { createDispatchWebComposition } from '@/infrastructure/composition/dispatch';
+import type { ReportingWebComposition } from '@/infrastructure/composition/reporting';
+import { createReportingWebComposition } from '@/infrastructure/composition/reporting';
 import type { Logger } from '@/application/shared/ports/logger';
 import type { PublicIdGenerator } from '@/application/shared/ports/public-id-generator';
 import { PasswordPolicy } from '@/domain/user/value-objects/password-policy';
@@ -54,7 +56,7 @@ import { QrCodeSvgGenerator } from '@/infrastructure/auth/qrcode-generator';
 import { parseRuntimeEnvironment } from '@/infrastructure/config/environment';
 import { createKyselyAuthRepositories } from '@/infrastructure/database/auth/create-kysely-auth-repositories';
 import { KyselyAuthTransaction } from '@/infrastructure/database/auth/kysely-auth-transaction';
-import { getRuntimeDatabase } from '@/infrastructure/database/client';
+import { getRuntimeDatabase, getRuntimeReportingDatabase } from '@/infrastructure/database/client';
 import { KyselyHealthCheckRepository } from '@/infrastructure/database/health/kysely-health-check-repository';
 import { UuidV7Generator } from '@/infrastructure/identifiers/uuid-v7-generator';
 import { createPinoLogger } from '@/infrastructure/logging/pino-logger';
@@ -68,7 +70,8 @@ export interface ApplicationComposition
     MasterDataWebComposition,
     BudgetWebComposition,
     FuelWebComposition,
-    DispatchWebComposition {
+    DispatchWebComposition,
+    ReportingWebComposition {
   readonly getHealthStatus: GetHealthStatus;
   readonly logger: Logger;
   readonly publicIdGenerator: PublicIdGenerator;
@@ -124,6 +127,7 @@ function buildApplicationComposition(
 ): ApplicationComposition {
   const configuration = parseRuntimeEnvironment(environment);
   const database = getRuntimeDatabase(environment);
+  const reportingDatabase = getRuntimeReportingDatabase(environment);
   const auditOptions = {
     primarySchema: configuration.audit.primarySchema,
     maximumCanonicalPayloadBytes: configuration.audit.maxCanonicalPayloadBytes,
@@ -149,6 +153,13 @@ function buildApplicationComposition(
   const budgetWeb = createBudgetWebComposition(database, auditOptions, { publicIds, clock });
   const fuelWeb = createFuelWebComposition(database, auditOptions, { publicIds, clock });
   const dispatchWeb = createDispatchWebComposition(database, auditOptions, { publicIds, clock });
+  const reportingWeb = createReportingWebComposition(
+    database,
+    reportingDatabase,
+    auditOptions,
+    configuration.reporting,
+    { publicIds, clock },
+  );
   const sessionPolicy = {
     standardIdleTimeoutSeconds: configuration.auth.standardIdleTimeoutSeconds,
     privilegedIdleTimeoutSeconds: configuration.auth.privilegedIdleTimeoutSeconds,
@@ -173,6 +184,7 @@ function buildApplicationComposition(
     ...budgetWeb,
     ...fuelWeb,
     ...dispatchWeb,
+    ...reportingWeb,
     getHealthStatus: new GetHealthStatus(
       new KyselyHealthCheckRepository(database, configuration.database.queryTimeoutMs),
     ),

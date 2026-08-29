@@ -1,6 +1,6 @@
 # Fuel and Vehicle Dispatch Management System
 
-This repository contains the secure application foundation, account access, budget allocation, reference-data, and durable audit systems for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
+This repository contains the secure application foundation, operational workflows, reporting, private exports, and durable audit systems for FVDMS. It uses Next.js 16, TypeScript, Kysely, MySQL, and Docker.
 
 The current system includes database-backed sessions, forced password replacement, optional privileged-account TOTP, role-based access control, account administration, and an independently verified audit chain.
 
@@ -33,16 +33,16 @@ Expected results:
 
 - The application is available at `https://fvdms.lan`.
 - `https://fvdms.lan/api/health` returns a success envelope with database status `available`.
-- `docker compose ps` shows `fvdms` as healthy and `fvdms-audit-worker` as running.
+- `docker compose ps` shows `fvdms` as healthy. It also shows the audit and reporting workers as running.
 - No application or database port is published directly to the host.
 
-Follow application and audit-worker logs:
+Follow application, audit-worker, and reporting-worker logs:
 
 ```sh
 pnpm dev:logs
 ```
 
-Stop the FVDMS application and audit worker:
+Stop the FVDMS application and both workers:
 
 ```sh
 pnpm dev:down
@@ -286,6 +286,91 @@ pnpm exec playwright test --project=chromium tests/e2e/dispatches.spec.ts tests/
 pnpm validate
 ```
 
+## Operational reports and private XLSX exports
+
+Authorized users open `/reports` from the Oversight navigation group. Report filters use native
+GET parameters, inclusive Asia/Manila civil dates, and stable cursor pagination. The reporting
+page exposes only report families allowed by the current user's read permissions.
+
+The nine initial reports use these business rules:
+
+| Report                             | Included records and measure                                                        |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| Fuel issuance detail               | POSTED and VOIDED issuances. VOIDED rows retain their stored quantities and prices. |
+| Dispatch detail                    | DRAFT, DISPATCHED, COMPLETED, and CANCELLED dispatches.                             |
+| Fuel consumption by office         | POSTED fuel quantities and amounts grouped by the stored requesting office.         |
+| Fuel consumption by vehicle        | POSTED fuel quantities and amounts grouped by the stored vehicle.                   |
+| Fuel type totals                   | POSTED fuel quantities and amounts grouped by fuel type.                            |
+| Total fuel amount by period        | POSTED fuel amounts grouped by civil reporting period.                              |
+| Dispatch count by office           | DISPATCHED and COMPLETED dispatches grouped by the stored requesting office.        |
+| Vehicle utilization                | COMPLETED dispatch distance grouped by the stored vehicle.                          |
+| Fuel activity by budget allocation | POSTED fuel quantities and amounts grouped by the stored allocation.                |
+
+Detail status filters must remain within each report's included statuses. Summary reports do not
+accept status overrides. Historical labels, quantities, unit prices, and odometer readings come
+from persisted transaction facts. They are not reconstructed from current reference data.
+
+Reading fuel reports requires `fuel.read`. Reading dispatch reports requires `dispatch.read`.
+Fuel exports also require `fuel.export`. Dispatch and budget-allocation activity exports require
+`report.export`. The migration grants `report.export` to Dispatch Officers. Existing administrator
+roles keep their seeded permissions.
+
+The reporting endpoints are:
+
+- `GET /api/reports/{reportType}` for bounded report results.
+- `POST /api/report-exports` to request a private workbook.
+- `GET /api/report-exports` and `GET /api/report-exports/{publicId}` for the requester's jobs.
+- `POST /api/report-exports/{publicId}/download-link` for a short-lived, one-time link.
+- `GET /api/report-exports/{publicId}/download?token=...` for the authorized file stream.
+
+Small exports up to 1,000 estimated rows complete in the request. Annual exports and larger jobs
+run through `fvdms-reporting-worker`. Every export is capped at 100,000 rows, 50 MiB, and 15
+minutes. A lease lasts 16 minutes and supports recovery after an interrupted worker. Jobs make at
+most three attempts.
+
+Workbooks contain `Report` and `Filters` worksheets. They include normalized filters, the period,
+generation time, headings, exact numeric cells, and server-calculated totals. Text cells are
+neutralized when leading controls, ASCII formula prefixes, or full-width formula variants could
+trigger spreadsheet evaluation.
+
+Files live only in the private `report-exports` volume. They expire after seven days. Download
+links expire after five minutes or at file expiry, whichever comes first. Tokens are stored only
+as hashes and are consumed once. Request, completion, terminal failure, and download authorization
+all create immutable audit events.
+
+Restart only the reporting worker with:
+
+```sh
+docker compose restart reporting-worker
+```
+
+Use `pnpm dev:logs` to diagnose failed jobs. Retryable infrastructure failures return to the queue
+with bounded backoff. An expired lease is reclaimed by a later worker claim. Terminal validation,
+permission, row-limit, file-limit, and exhausted failures remain failed and require a new request
+after the cause is corrected.
+
+If a completed job has no file, preserve the database and worker logs. Treat it as an integrity
+incident before requesting a replacement. Cleanup retries file deletion failures and removes stale
+temporary files. Do not delete job or token rows manually while investigating.
+
+Review production package advisories with `pnpm audit --prod`. Apply a compatible patched version
+and run the complete validation suite before release. Do not suppress an advisory without a written
+risk decision.
+
+Local development uses a separate read-only `fvdms_reporter` account on the shared MySQL host. This
+proves grants and the reporting adapter boundary, but it does not isolate load from primary writes.
+Production must use the replica or snapshot required by FVD-011. Production startup rejects a
+writer alias unless a reviewed deployment exception explicitly enables it.
+
+Validate reporting with:
+
+```sh
+pnpm exec vitest run --config vitest.config.ts tests/unit/application/reporting tests/unit/infrastructure/reporting tests/unit/lib/reporting tests/unit/app/api/reports tests/unit/app/api/report-exports tests/unit/components/reporting
+pnpm exec vitest run --config vitest.integration.config.ts tests/integration/reporting
+pnpm exec playwright test --project=chromium tests/e2e/reports.spec.ts tests/e2e/report-permissions.spec.ts tests/e2e/protected-navigation.spec.ts tests/e2e/accessibility.spec.ts
+pnpm validate
+```
+
 ## Database operations
 
 The shared local MySQL service is named `mysql` on the external `dev-net` network. FVDMS creates its application database, primary audit schema, secondary audit schema, and dedicated accounts.
@@ -301,7 +386,7 @@ pnpm db:rollback
 
 These commands run in the short-lived `database-tools` container. Repeated bootstrap and migrate calls are safe.
 
-The application, migration, worker, sink-writer, and verifier accounts have separate grants. Only the migration account can change FVDMS schemas. None is the shared MySQL administrator.
+The application, reporting, migration, worker, sink-writer, and verifier accounts have separate grants. Only the migration account can change FVDMS schemas. None is the shared MySQL administrator.
 
 ## Durable audit operations
 
