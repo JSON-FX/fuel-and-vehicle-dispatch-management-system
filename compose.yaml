@@ -272,6 +272,7 @@ services:
       - .:/app
       - node-modules:/app/node_modules
       - pnpm-store:/pnpm/store
+      - report-exports:/var/lib/fvdms/exports
     networks:
       - dev-net
 

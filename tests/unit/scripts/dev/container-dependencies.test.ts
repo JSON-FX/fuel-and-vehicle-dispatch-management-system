@@ -49,6 +49,32 @@ describe('container dependency recovery', () => {
     );
   });
 
+  it('makes the private report-export volume available to the startup permission repair', () => {
+    const compose = JSON.parse(
+      execFileSync('docker', ['compose', '--profile', 'tools', 'config', '--format', 'json'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      }),
+    ) as {
+      services: Record<
+        string,
+        {
+          volumes?: Array<{ source: string; target: string; type: string }>;
+        }
+      >;
+    };
+
+    expect(compose.services['database-tools']?.volumes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'report-exports',
+          target: '/var/lib/fvdms/exports',
+          type: 'volume',
+        }),
+      ]),
+    );
+  });
+
   it('runs a non-routed worker without application or verifier credentials', () => {
     const compose = JSON.parse(
       execFileSync('docker', ['compose', 'config', '--format', 'json'], {
@@ -108,6 +134,7 @@ describe('container dependency recovery', () => {
       const commands = readFileSync(commandLog, 'utf8').trim().split('\n');
       expect(commands.slice(1)).toEqual([
         'docker compose run --rm --no-deps --user root database-tools chown -R node:node /pnpm/store',
+        'docker compose run --rm --no-deps --user root database-tools chown -R node:node /var/lib/fvdms/exports',
         'pnpm db:bootstrap',
         'pnpm db:migrate',
         'pnpm db:bootstrap',

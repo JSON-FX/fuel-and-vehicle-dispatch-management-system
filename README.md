@@ -386,6 +386,14 @@ pnpm db:rollback
 
 These commands run in the short-lived `database-tools` container. Repeated bootstrap and migrate calls are safe.
 
+Seed 100 through 500 synthetic operational records for local visual review:
+
+```sh
+pnpm db:seed-demo -- --count 300
+```
+
+The count is split between fuel issuances and vehicle dispatches. The command also creates clearly marked offices, drivers, vehicles, and period-correct budget allocations. It requires an active Super Administrator as the recorded seed actor, refuses production mode, and refuses a second demo batch until the database is reset.
+
 The application, reporting, migration, worker, sink-writer, and verifier accounts have separate grants. Only the migration account can change FVDMS schemas. None is the shared MySQL administrator.
 
 ## Durable audit operations
