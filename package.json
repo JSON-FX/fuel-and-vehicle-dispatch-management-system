@@ -29,6 +29,7 @@
     "reporting:worker": "./scripts/reporting/worker.sh",
     "reporting:worker:container": "docker compose up -d reporting-worker",
     "db:bootstrap": "./scripts/database/run.sh bootstrap",
+    "db:fresh": "./scripts/database/run.sh fresh",
     "db:migrate": "./scripts/database/run.sh migrate",
     "db:rollback": "./scripts/database/run.sh rollback",
     "db:seed-demo": "./scripts/database/run.sh seed-demo",

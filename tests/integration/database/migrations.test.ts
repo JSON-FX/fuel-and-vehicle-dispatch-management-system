@@ -6,6 +6,8 @@ import { createMigrator } from '@/infrastructure/database/migrator';
 import type { Database } from '@/infrastructure/database/types';
 import { publicIdToBinary } from '@/infrastructure/database/uuid-binary';
 
+import { freshDatabase } from '../../../scripts/database/fresh';
+
 import { createTestDatabase } from '../helpers/test-database';
 
 interface ColumnDescription {
@@ -288,6 +290,42 @@ describe('baseline migrations', () => {
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
+    ).toHaveLength(10);
+  });
+
+  it('removes existing data and reapplies every migration in the isolated database', async () => {
+    await database
+      .insertInto('application_metadata')
+      .values({
+        public_id: publicIdToBinary(PublicId.from('019c043f-422c-7141-8a03-a9d9bda3545b')),
+        metadata_key: 'fresh.integration-marker',
+        metadata_value: JSON.stringify({ remove: true }),
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .execute();
+
+    await expect(freshDatabase(createMigrator(database))).resolves.toEqual({
+      rolledBack: 10,
+      applied: 10,
+    });
+    await expect(
+      database
+        .selectFrom('application_metadata')
+        .select('id')
+        .where('metadata_key', '=', 'fresh.integration-marker')
+        .execute(),
+    ).resolves.toEqual([]);
+    await expect(
+      database.selectFrom('roles').select('code').orderBy('code').execute(),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'SUPER_ADMIN' }),
+        expect.objectContaining({ code: 'SYSTEM_ADMIN' }),
+      ]),
+    );
+    expect(
+      (await createMigrator(database).getMigrations()).filter((migration) => migration.executedAt),
     ).toHaveLength(10);
   });
 });
