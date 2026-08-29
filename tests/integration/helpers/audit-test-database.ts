@@ -17,6 +17,7 @@ import type { TestDatabaseConfiguration } from './test-database';
 const credentials = {
   application: { user: 'fvdms_it_app', password: 'fvdms-it-application-password' },
   migration: { user: 'fvdms_it_migrator', password: 'fvdms-it-migration-password' },
+  reporting: { user: 'fvdms_it_reporter', password: 'fvdms-it-reporter-password' },
   worker: { user: 'fvdms_it_audit_worker', password: 'fvdms-it-worker-password' },
   sinkWriter: { user: 'fvdms_it_sink_writer', password: 'fvdms-it-sink-password' },
   verifier: { user: 'fvdms_it_verifier', password: 'fvdms-it-verifier-password' },
@@ -63,6 +64,7 @@ export async function createAuditTestDatabase(
     database: { name: configuration.database },
     application: credentials.application,
     migration: credentials.migration,
+    reporting: credentials.reporting,
     audit: {
       primarySchema: 'fvdms_audit',
       sinkSchema: 'fvdms_audit_sink',

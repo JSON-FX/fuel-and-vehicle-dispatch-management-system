@@ -211,11 +211,11 @@ describe('baseline migrations', () => {
     ]);
   });
 
-  it('rolls back and reapplies only the latest dispatch scheduling migration', async () => {
+  it('rolls back and reapplies only the latest reporting migration', async () => {
     const migrator = createMigrator(database);
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(9);
+    ).toHaveLength(10);
 
     const rollback = await migrator.migrateDown();
     expect(rollback.error).toBeUndefined();
@@ -260,11 +260,21 @@ describe('baseline migrations', () => {
     expect(latestTablesAfterRollback.rows.map((row) => row.TABLE_NAME).sort()).toEqual([
       'authentication_settings',
       'budget_allocations',
+      'dispatch_schedule_settings',
       'fuel_issuances',
       'fuel_ledger_entries',
       'fuel_sequence_monthly',
+      'vehicle_dispatch_conflict_overrides',
       'vehicle_dispatches',
     ]);
+
+    const reportingTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
+      select TABLE_NAME
+      from information_schema.tables
+      where table_schema = database()
+        and table_name in ('export_jobs', 'export_download_tokens')
+    `.execute(database);
+    expect(reportingTablesAfterRollback.rows).toEqual([]);
 
     const auditTablesAfterRollback = await sql<{ TABLE_NAME: string }>`
       select TABLE_NAME
@@ -278,6 +288,6 @@ describe('baseline migrations', () => {
     expect(reapply.error).toBeUndefined();
     expect(
       (await migrator.getMigrations()).filter((migration) => migration.executedAt),
-    ).toHaveLength(9);
+    ).toHaveLength(10);
   });
 });

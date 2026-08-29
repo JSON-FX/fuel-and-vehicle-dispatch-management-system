@@ -57,6 +57,21 @@ test('mobile drawer supports keyboard dismissal, focus return, and navigation', 
   expect(await hasNoPageOverflow(page)).toBe(true);
 });
 
+test('reports stays grouped under Oversight in expanded and collapsed navigation', async ({
+  page,
+}) => {
+  await login(page, credentials.standard);
+  await page.goto('/reports');
+  const sidebar = page.getByRole('complementary', { name: 'Application navigation' });
+  await expect(sidebar.getByRole('link', { name: 'Reports' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(sidebar.getByText('Oversight', { exact: true })).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Collapse sidebar' }).click();
+  await expect(sidebar.getByRole('link', { name: 'Reports' })).toHaveAttribute('title', 'Reports');
+});
+
 function hasNoPageOverflow(page: import('@playwright/test').Page): Promise<boolean> {
   return page.evaluate(
     () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,

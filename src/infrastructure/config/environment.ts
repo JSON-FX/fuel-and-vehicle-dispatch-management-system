@@ -30,6 +30,58 @@ const databaseConnectionSchema = z
     path: ['DATABASE_POOL_MAX'],
   });
 
+const reportingConnectionSchema = z
+  .object({
+    REPORTING_DATABASE_HOST: z.string().min(1),
+    REPORTING_DATABASE_PORT: positiveIntegerSchema.default(3306),
+    REPORTING_DATABASE_NAME: databaseIdentifierSchema,
+    REPORTING_DATABASE_USER: databaseIdentifierSchema,
+    REPORTING_DATABASE_PASSWORD: z.string().min(1),
+    REPORTING_DATABASE_POOL_MIN: nonNegativeIntegerSchema.default(0),
+    REPORTING_DATABASE_POOL_MAX: positiveIntegerSchema.default(3),
+    REPORTING_DATABASE_CONNECT_TIMEOUT_MS: positiveIntegerSchema.default(5_000),
+    REPORTING_DATABASE_QUERY_TIMEOUT_MS: positiveIntegerSchema.default(10_000),
+    REPORTING_ALLOW_WRITER_ALIAS: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+  })
+  .refine((value) => value.REPORTING_DATABASE_POOL_MAX >= value.REPORTING_DATABASE_POOL_MIN, {
+    message:
+      'REPORTING_DATABASE_POOL_MAX must be greater than or equal to REPORTING_DATABASE_POOL_MIN.',
+    path: ['REPORTING_DATABASE_POOL_MAX'],
+  });
+
+const reportingPolicySchema = z
+  .object({
+    REPORT_EXPORT_STORAGE_ROOT: z.string().min(1).default('/var/lib/fvdms/exports'),
+    REPORT_EXPORT_POLL_INTERVAL_MS: positiveIntegerSchema.default(1_000),
+    REPORT_EXPORT_SYNC_ROW_LIMIT: positiveIntegerSchema.max(100_000).default(1_000),
+    REPORT_EXPORT_MAX_ROWS: positiveIntegerSchema.max(100_000).default(100_000),
+    REPORT_EXPORT_MAX_BYTES: positiveIntegerSchema.default(52_428_800),
+    REPORT_EXPORT_TIMEOUT_MS: positiveIntegerSchema.default(900_000),
+    REPORT_EXPORT_LEASE_MS: positiveIntegerSchema.default(960_000),
+    REPORT_EXPORT_RETENTION_SECONDS: positiveIntegerSchema.default(604_800),
+    REPORT_EXPORT_TOKEN_TTL_SECONDS: positiveIntegerSchema.max(300).default(300),
+    REPORT_EXPORT_STALE_TEMP_SECONDS: positiveIntegerSchema.default(3_600),
+  })
+  .superRefine((value, context) => {
+    if (value.REPORT_EXPORT_LEASE_MS <= value.REPORT_EXPORT_TIMEOUT_MS) {
+      context.addIssue({
+        code: 'custom',
+        path: ['REPORT_EXPORT_LEASE_MS'],
+        message: 'REPORT_EXPORT_LEASE_MS must be greater than REPORT_EXPORT_TIMEOUT_MS.',
+      });
+    }
+    if (value.REPORT_EXPORT_SYNC_ROW_LIMIT > value.REPORT_EXPORT_MAX_ROWS) {
+      context.addIssue({
+        code: 'custom',
+        path: ['REPORT_EXPORT_SYNC_ROW_LIMIT'],
+        message: 'REPORT_EXPORT_SYNC_ROW_LIMIT must not exceed REPORT_EXPORT_MAX_ROWS.',
+      });
+    }
+  });
+
 function base64KeySchema(variableName: string) {
   return z.string().superRefine((value, context) => {
     if (!/^[A-Za-z0-9+/]{43}=$/.test(value) || Buffer.from(value, 'base64').byteLength !== 32) {
@@ -178,6 +230,8 @@ const bootstrapEnvironmentSchema = z.object({
   DATABASE_PASSWORD: z.string().min(1),
   MIGRATION_DATABASE_USER: databaseIdentifierSchema,
   MIGRATION_DATABASE_PASSWORD: z.string().min(1),
+  REPORTING_DATABASE_USER: databaseIdentifierSchema,
+  REPORTING_DATABASE_PASSWORD: z.string().min(1),
   AUDIT_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit'),
   AUDIT_SINK_DATABASE_NAME: databaseIdentifierSchema.default('fvdms_audit_sink'),
   AUDIT_WORKER_DATABASE_USER: databaseIdentifierSchema,
@@ -212,6 +266,8 @@ export interface DatabaseRuntimeEnvironment {
 export interface RuntimeEnvironment extends DatabaseRuntimeEnvironment {
   readonly auth: AuthenticationEnvironment;
   readonly audit: AuditPolicyEnvironment;
+  readonly reportingDatabase: DatabaseEnvironment;
+  readonly reporting: ReportingPolicyEnvironment;
 }
 
 export interface AuditPolicyEnvironment {
@@ -232,6 +288,28 @@ export interface AuditProcessEnvironment {
   readonly primaryDatabase: DatabaseEnvironment;
   readonly sinkDatabase: DatabaseEnvironment;
   readonly policy: AuditPolicyEnvironment;
+}
+
+export interface ReportingPolicyEnvironment {
+  readonly storageRoot: string;
+  readonly pollIntervalMs: number;
+  readonly synchronousRowLimit: number;
+  readonly maximumRows: number;
+  readonly maximumBytes: number;
+  readonly timeoutMs: number;
+  readonly leaseMs: number;
+  readonly retentionMs: number;
+  readonly tokenTtlMs: number;
+  readonly staleTemporaryMs: number;
+}
+
+export interface ReportingProcessEnvironment {
+  readonly nodeEnv: NodeEnvironment;
+  readonly logLevel: LogLevel;
+  readonly applicationDatabase: DatabaseEnvironment;
+  readonly reportingDatabase: DatabaseEnvironment;
+  readonly audit: AuditPolicyEnvironment;
+  readonly policy: ReportingPolicyEnvironment;
 }
 
 export interface AuthenticationEnvironment {
@@ -262,6 +340,7 @@ export interface BootstrapEnvironment {
   readonly database: { readonly name: string };
   readonly application: { readonly user: string; readonly password: string };
   readonly migration: { readonly user: string; readonly password: string };
+  readonly reporting: { readonly user: string; readonly password: string };
   readonly audit: {
     readonly primarySchema: string;
     readonly sinkSchema: string;
@@ -345,6 +424,69 @@ function mapAuditDatabaseEnvironment(
   };
 }
 
+function mapReportingDatabaseEnvironment(
+  parsed: z.infer<typeof reportingConnectionSchema>,
+): DatabaseEnvironment {
+  return {
+    host: parsed.REPORTING_DATABASE_HOST,
+    port: parsed.REPORTING_DATABASE_PORT,
+    name: parsed.REPORTING_DATABASE_NAME,
+    user: parsed.REPORTING_DATABASE_USER,
+    password: parsed.REPORTING_DATABASE_PASSWORD,
+    poolMin: parsed.REPORTING_DATABASE_POOL_MIN,
+    poolMax: parsed.REPORTING_DATABASE_POOL_MAX,
+    connectTimeoutMs: parsed.REPORTING_DATABASE_CONNECT_TIMEOUT_MS,
+    queryTimeoutMs: parsed.REPORTING_DATABASE_QUERY_TIMEOUT_MS,
+  };
+}
+
+function mapReportingPolicy(
+  parsed: z.infer<typeof reportingPolicySchema>,
+): ReportingPolicyEnvironment {
+  return {
+    storageRoot: parsed.REPORT_EXPORT_STORAGE_ROOT,
+    pollIntervalMs: parsed.REPORT_EXPORT_POLL_INTERVAL_MS,
+    synchronousRowLimit: parsed.REPORT_EXPORT_SYNC_ROW_LIMIT,
+    maximumRows: parsed.REPORT_EXPORT_MAX_ROWS,
+    maximumBytes: parsed.REPORT_EXPORT_MAX_BYTES,
+    timeoutMs: parsed.REPORT_EXPORT_TIMEOUT_MS,
+    leaseMs: parsed.REPORT_EXPORT_LEASE_MS,
+    retentionMs: parsed.REPORT_EXPORT_RETENTION_SECONDS * 1_000,
+    tokenTtlMs: parsed.REPORT_EXPORT_TOKEN_TTL_SECONDS * 1_000,
+    staleTemporaryMs: parsed.REPORT_EXPORT_STALE_TEMP_SECONDS * 1_000,
+  };
+}
+
+function parseReportingConnection(
+  environment: Record<string, string | undefined>,
+  common: BuildEnvironment,
+): z.infer<typeof reportingConnectionSchema> {
+  const withTestFallbacks =
+    common.nodeEnv === 'test'
+      ? {
+          ...environment,
+          REPORTING_DATABASE_HOST: environment.REPORTING_DATABASE_HOST ?? environment.DATABASE_HOST,
+          REPORTING_DATABASE_PORT: environment.REPORTING_DATABASE_PORT ?? environment.DATABASE_PORT,
+          REPORTING_DATABASE_NAME: environment.REPORTING_DATABASE_NAME ?? environment.DATABASE_NAME,
+          REPORTING_DATABASE_USER: environment.REPORTING_DATABASE_USER ?? environment.DATABASE_USER,
+          REPORTING_DATABASE_PASSWORD:
+            environment.REPORTING_DATABASE_PASSWORD ?? environment.DATABASE_PASSWORD,
+          REPORTING_DATABASE_POOL_MIN:
+            environment.REPORTING_DATABASE_POOL_MIN ?? environment.DATABASE_POOL_MIN,
+          REPORTING_DATABASE_POOL_MAX:
+            environment.REPORTING_DATABASE_POOL_MAX ?? environment.DATABASE_POOL_MAX,
+          REPORTING_DATABASE_CONNECT_TIMEOUT_MS:
+            environment.REPORTING_DATABASE_CONNECT_TIMEOUT_MS ??
+            environment.DATABASE_CONNECT_TIMEOUT_MS,
+          REPORTING_DATABASE_QUERY_TIMEOUT_MS:
+            environment.REPORTING_DATABASE_QUERY_TIMEOUT_MS ??
+            environment.DATABASE_QUERY_TIMEOUT_MS,
+        }
+      : environment;
+
+  return reportingConnectionSchema.parse(withTestFallbacks);
+}
+
 function assertSeparatedSinkIdentity(input: {
   readonly nodeEnv: NodeEnvironment;
   readonly applicationUser: string;
@@ -355,20 +497,65 @@ function assertSeparatedSinkIdentity(input: {
   }
 }
 
+function assertSeparatedReportingIdentity(input: {
+  readonly nodeEnv: NodeEnvironment;
+  readonly applicationHost: string;
+  readonly applicationPort: number;
+  readonly applicationName: string;
+  readonly applicationUser: string;
+  readonly reportingHost: string;
+  readonly reportingPort: number;
+  readonly reportingName: string;
+  readonly reportingUser: string;
+  readonly allowWriterAlias: boolean;
+}): void {
+  if (input.nodeEnv !== 'production' || input.allowWriterAlias) return;
+  if (input.applicationUser === input.reportingUser) {
+    throw new Error('REPORTING_DATABASE_USER must differ from DATABASE_USER in production.');
+  }
+  if (
+    input.applicationHost === input.reportingHost &&
+    input.applicationPort === input.reportingPort &&
+    input.applicationName === input.reportingName
+  ) {
+    throw new Error(
+      'REPORTING_DATABASE_* must point to an isolated replica or snapshot in production.',
+    );
+  }
+}
+
 export function parseRuntimeEnvironment(
   environment: Record<string, string | undefined>,
 ): RuntimeEnvironment {
   rejectPublicSecrets(environment);
+  const common = parseCommonEnvironment(environment);
   const parsed = databaseConnectionSchema.parse(environment);
+  const reporting = parseReportingConnection(environment, common);
+  const reportingPolicy = reportingPolicySchema.parse(environment);
   const auth = authenticationEnvironmentSchema.parse(environment);
   const audit = auditPolicySchema.parse(environment);
 
+  assertSeparatedReportingIdentity({
+    nodeEnv: common.nodeEnv,
+    applicationHost: parsed.DATABASE_HOST,
+    applicationPort: parsed.DATABASE_PORT,
+    applicationName: parsed.DATABASE_NAME,
+    applicationUser: parsed.DATABASE_USER,
+    reportingHost: reporting.REPORTING_DATABASE_HOST,
+    reportingPort: reporting.REPORTING_DATABASE_PORT,
+    reportingName: reporting.REPORTING_DATABASE_NAME,
+    reportingUser: reporting.REPORTING_DATABASE_USER,
+    allowWriterAlias: reporting.REPORTING_ALLOW_WRITER_ALIAS,
+  });
+
   return {
-    ...parseCommonEnvironment(environment),
+    ...common,
     database: mapDatabaseEnvironment(parsed, {
       user: parsed.DATABASE_USER,
       password: parsed.DATABASE_PASSWORD,
     }),
+    reportingDatabase: mapReportingDatabaseEnvironment(reporting),
+    reporting: mapReportingPolicy(reportingPolicy),
     auth: {
       allowedOrigin: auth.AUTH_ALLOWED_ORIGIN,
       standardIdleTimeoutSeconds: auth.AUTH_STANDARD_IDLE_TIMEOUT_SECONDS,
@@ -387,6 +574,39 @@ export function parseRuntimeEnvironment(
       rateLimitHmacKey: auth.AUTH_RATE_LIMIT_HMAC_KEY,
     },
     audit: mapAuditPolicy(audit),
+  };
+}
+
+export function parseReportingWorkerEnvironment(
+  environment: Record<string, string | undefined>,
+): ReportingProcessEnvironment {
+  rejectPublicSecrets(environment);
+  const common = parseCommonEnvironment(environment);
+  const application = databaseConnectionSchema.parse(environment);
+  const reporting = parseReportingConnection(environment, common);
+  const audit = auditPolicySchema.parse(environment);
+  const policy = reportingPolicySchema.parse(environment);
+  assertSeparatedReportingIdentity({
+    nodeEnv: common.nodeEnv,
+    applicationHost: application.DATABASE_HOST,
+    applicationPort: application.DATABASE_PORT,
+    applicationName: application.DATABASE_NAME,
+    applicationUser: application.DATABASE_USER,
+    reportingHost: reporting.REPORTING_DATABASE_HOST,
+    reportingPort: reporting.REPORTING_DATABASE_PORT,
+    reportingName: reporting.REPORTING_DATABASE_NAME,
+    reportingUser: reporting.REPORTING_DATABASE_USER,
+    allowWriterAlias: reporting.REPORTING_ALLOW_WRITER_ALIAS,
+  });
+  return {
+    ...common,
+    applicationDatabase: mapDatabaseEnvironment(application, {
+      user: application.DATABASE_USER,
+      password: application.DATABASE_PASSWORD,
+    }),
+    reportingDatabase: mapReportingDatabaseEnvironment(reporting),
+    audit: mapAuditPolicy(audit),
+    policy: mapReportingPolicy(policy),
   };
 }
 
@@ -482,6 +702,10 @@ export function parseBootstrapEnvironment(
     migration: {
       user: parsed.MIGRATION_DATABASE_USER,
       password: parsed.MIGRATION_DATABASE_PASSWORD,
+    },
+    reporting: {
+      user: parsed.REPORTING_DATABASE_USER,
+      password: parsed.REPORTING_DATABASE_PASSWORD,
     },
     audit: {
       primarySchema: parsed.AUDIT_DATABASE_NAME,

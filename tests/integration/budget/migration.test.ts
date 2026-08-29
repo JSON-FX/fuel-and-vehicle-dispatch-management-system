@@ -115,6 +115,8 @@ describe('budget allocation migration', () => {
         updated_at: new Date('2026-08-28T09:30:00.000Z'),
       })
       .execute();
+    const reportingRollback = await migrator.migrateDown();
+    expect(reportingRollback.error).toBeUndefined();
     const schedulingRollback = await migrator.migrateDown();
     expect(schedulingRollback.error).toBeUndefined();
     const dispatchRollback = await migrator.migrateDown();

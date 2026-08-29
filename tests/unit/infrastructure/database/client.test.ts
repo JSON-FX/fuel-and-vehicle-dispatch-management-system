@@ -7,6 +7,7 @@ import {
   destroyDatabaseClients,
   getMigrationDatabase,
   getRuntimeDatabase,
+  getRuntimeReportingDatabase,
 } from '@/infrastructure/database/client';
 import { createMigrator } from '@/infrastructure/database/migrator';
 
@@ -70,11 +71,14 @@ describe('MySQL pool options', () => {
 
   it('creates lazy singleton runtime and migration clients', async () => {
     const runtime = getRuntimeDatabase(processEnvironment);
+    const reporting = getRuntimeReportingDatabase(processEnvironment);
     const migration = getMigrationDatabase(processEnvironment);
 
     expect(getRuntimeDatabase(processEnvironment)).toBe(runtime);
     expect(getMigrationDatabase(processEnvironment)).toBe(migration);
     expect(migration).not.toBe(runtime);
+    expect(reporting).not.toBe(runtime);
+    expect(reporting).not.toBe(migration);
     expect(createMigrator(migration)).toBeDefined();
   });
 

@@ -109,6 +109,8 @@ describe('master-data migration', () => {
 
   it('preserves migration 000004 when rolling back 000005, then reapplies both', async () => {
     const migrator = createMigrator(database);
+    const reportingRollback = await migrator.migrateDown();
+    expect(reportingRollback.error).toBeUndefined();
     const schedulingRollback = await migrator.migrateDown();
     expect(schedulingRollback.error).toBeUndefined();
     const dispatchRollback = await migrator.migrateDown();

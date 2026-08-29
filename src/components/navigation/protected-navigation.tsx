@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleUserRound,
   FileSearch,
+  FileSpreadsheet,
   Fuel,
   IdCard,
   Landmark,
@@ -44,6 +45,7 @@ export interface ProtectedNavigationAccess {
   readonly drivers: boolean;
   readonly fuel: boolean;
   readonly offices: boolean;
+  readonly reports: boolean;
   readonly roles: boolean;
   readonly security: boolean;
   readonly users: boolean;
@@ -402,6 +404,7 @@ function createNavigationGroups(access: ProtectedNavigationAccess): readonly Nav
     {
       label: 'Oversight',
       items: compactItems([
+        access.reports ? { href: '/reports', icon: FileSpreadsheet, label: 'Reports' } : null,
         access.audit ? { href: '/audit', icon: FileSearch, label: 'Audit trail' } : null,
       ]),
     },

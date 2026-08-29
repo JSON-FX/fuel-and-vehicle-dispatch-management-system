@@ -5,7 +5,9 @@ import { parseBootstrapEnvironment } from '@/infrastructure/config/environment';
 import {
   createAuditRuntimeGrantStatements,
   createBootstrapStatements,
+  createReportingRuntimeGrantStatements,
   requiredAuditTables,
+  requiredReportingTables,
 } from '@/infrastructure/database/bootstrap';
 
 const environment = parseBootstrapEnvironment(process.env);
@@ -27,8 +29,8 @@ try {
   const [rows] = await connection.query<RowDataPacket[]>(
     `SELECT TABLE_SCHEMA AS tableSchema, TABLE_NAME AS tableName
        FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_SCHEMA IN (?, ?)`,
-    [environment.audit.primarySchema, environment.audit.sinkSchema],
+      WHERE TABLE_SCHEMA IN (?, ?, ?)`,
+    [environment.database.name, environment.audit.primarySchema, environment.audit.sinkSchema],
   );
   const existingTables = new Set(
     rows.map((row) => `${String(row.tableSchema)}.${String(row.tableName)}`),
@@ -41,6 +43,16 @@ try {
     console.info('Audit table grants are ready.');
   } else {
     console.info('Audit table grants will be applied after the audit migration.');
+  }
+
+  const reportingTables = requiredReportingTables(environment);
+  if ([...reportingTables].every((table) => existingTables.has(table))) {
+    for (const statement of createReportingRuntimeGrantStatements(environment)) {
+      await connection.query(statement);
+    }
+    console.info('Reporting source-table grants are ready.');
+  } else {
+    console.info('Reporting grants will be applied after source migrations.');
   }
 
   console.info('Databases and least-privilege users are ready.');

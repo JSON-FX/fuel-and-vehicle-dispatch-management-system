@@ -15,6 +15,7 @@ const fullAccess: ProtectedNavigationAccess = {
   drivers: true,
   fuel: true,
   offices: true,
+  reports: true,
   roles: true,
   security: true,
   users: true,
@@ -36,6 +37,7 @@ describe('protected navigation', () => {
     expect(html).toContain('Administration');
     expect(html).toContain('Dispatch settings');
     expect(html).toContain('Oversight');
+    expect(html).toContain('Reports');
     expect(html).toMatch(/<a(?=[^>]*href="\/admin\/drivers")(?=[^>]*aria-current="page")[^>]*>/);
     expect(html).toMatch(/<details[^>]*open=""[^>]*>[\s\S]*?Master data/);
   });
@@ -51,6 +53,7 @@ describe('protected navigation', () => {
           dispatchSettings: false,
           drivers: false,
           offices: false,
+          reports: false,
           vehicles: false,
         },
         pathname: '/fuel-issuances',

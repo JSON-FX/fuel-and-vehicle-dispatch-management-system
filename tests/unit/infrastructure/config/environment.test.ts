@@ -6,6 +6,7 @@ import {
   parseBootstrapEnvironment,
   parseBuildEnvironment,
   parseMigrationEnvironment,
+  parseReportingWorkerEnvironment,
   parseRuntimeEnvironment,
 } from '@/infrastructure/config/environment';
 
@@ -21,6 +22,15 @@ const runtimeEnvironment = {
   DATABASE_POOL_MAX: '10',
   DATABASE_CONNECT_TIMEOUT_MS: '5000',
   DATABASE_QUERY_TIMEOUT_MS: '2000',
+  REPORTING_DATABASE_HOST: 'mysql',
+  REPORTING_DATABASE_PORT: '3306',
+  REPORTING_DATABASE_NAME: 'fvdms',
+  REPORTING_DATABASE_USER: 'fvdms_reporter',
+  REPORTING_DATABASE_PASSWORD: 'local-reporter-password',
+  REPORTING_DATABASE_POOL_MIN: '0',
+  REPORTING_DATABASE_POOL_MAX: '3',
+  REPORTING_DATABASE_CONNECT_TIMEOUT_MS: '5000',
+  REPORTING_DATABASE_QUERY_TIMEOUT_MS: '10000',
   AUTH_ALLOWED_ORIGIN: 'https://fvdms.lan',
   AUTH_STANDARD_IDLE_TIMEOUT_SECONDS: '1800',
   AUTH_PRIVILEGED_IDLE_TIMEOUT_SECONDS: '900',
@@ -70,6 +80,29 @@ describe('environment parsing', () => {
         poolMax: 10,
         connectTimeoutMs: 5000,
         queryTimeoutMs: 2000,
+      },
+      reportingDatabase: {
+        host: 'mysql',
+        port: 3306,
+        name: 'fvdms',
+        user: 'fvdms_reporter',
+        password: 'local-reporter-password',
+        poolMin: 0,
+        poolMax: 3,
+        connectTimeoutMs: 5000,
+        queryTimeoutMs: 10000,
+      },
+      reporting: {
+        storageRoot: '/var/lib/fvdms/exports',
+        pollIntervalMs: 1000,
+        synchronousRowLimit: 1000,
+        maximumRows: 100000,
+        maximumBytes: 52428800,
+        timeoutMs: 900000,
+        leaseMs: 960000,
+        retentionMs: 604800000,
+        tokenTtlMs: 300000,
+        staleTemporaryMs: 3600000,
       },
       auth: {
         allowedOrigin: 'https://fvdms.lan',
@@ -151,6 +184,51 @@ describe('environment parsing', () => {
     ).toThrow('AUDIT_SINK_DATABASE_USER must differ from DATABASE_USER outside tests.');
   });
 
+  it('rejects the application writer as the reporting identity in production', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        NODE_ENV: 'production',
+        REPORTING_DATABASE_USER: runtimeEnvironment.DATABASE_USER,
+      }),
+    ).toThrow('REPORTING_DATABASE_USER must differ from DATABASE_USER in production.');
+  });
+
+  it('rejects a same-host reporting database in production without an exception', () => {
+    expect(() =>
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        NODE_ENV: 'production',
+      }),
+    ).toThrow('REPORTING_DATABASE_* must point to an isolated replica or snapshot in production.');
+  });
+
+  it('allows an explicitly reviewed production reporting alias exception', () => {
+    expect(
+      parseRuntimeEnvironment({
+        ...runtimeEnvironment,
+        NODE_ENV: 'production',
+        REPORTING_DATABASE_USER: runtimeEnvironment.DATABASE_USER,
+        REPORTING_ALLOW_WRITER_ALIAS: 'true',
+      }).reportingDatabase.user,
+    ).toBe(runtimeEnvironment.DATABASE_USER);
+  });
+
+  it('parses an isolated reporting worker and rejects a lease shorter than its timeout', () => {
+    expect(parseReportingWorkerEnvironment(runtimeEnvironment)).toMatchObject({
+      applicationDatabase: { user: 'fvdms_app' },
+      reportingDatabase: { user: 'fvdms_reporter', poolMax: 3 },
+      policy: { timeoutMs: 900000, leaseMs: 960000 },
+    });
+    expect(() =>
+      parseReportingWorkerEnvironment({
+        ...runtimeEnvironment,
+        REPORT_EXPORT_TIMEOUT_MS: '900000',
+        REPORT_EXPORT_LEASE_MS: '900000',
+      }),
+    ).toThrow('REPORT_EXPORT_LEASE_MS must be greater than REPORT_EXPORT_TIMEOUT_MS.');
+  });
+
   it('rejects authentication keys that are not exactly 32 bytes', () => {
     expect(() =>
       parseRuntimeEnvironment({
@@ -206,6 +284,8 @@ describe('environment parsing', () => {
         ...runtimeEnvironment,
         MIGRATION_DATABASE_USER: 'fvdms_migrator',
         MIGRATION_DATABASE_PASSWORD: 'local-migrator-password',
+        REPORTING_DATABASE_USER: 'fvdms_reporter',
+        REPORTING_DATABASE_PASSWORD: 'local-reporter-password',
       }).database.user,
     ).toBe('fvdms_migrator');
   });
@@ -222,6 +302,8 @@ describe('environment parsing', () => {
         DATABASE_PASSWORD: 'local-app-password',
         MIGRATION_DATABASE_USER: 'fvdms_migrator',
         MIGRATION_DATABASE_PASSWORD: 'local-migrator-password',
+        REPORTING_DATABASE_USER: 'fvdms_reporter',
+        REPORTING_DATABASE_PASSWORD: 'local-reporter-password',
         AUDIT_DATABASE_NAME: 'fvdms_audit',
         AUDIT_SINK_DATABASE_NAME: 'fvdms_audit_sink',
         AUDIT_WORKER_DATABASE_USER: 'fvdms_audit_worker',

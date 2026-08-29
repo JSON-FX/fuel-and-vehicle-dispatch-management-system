@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { MySqlContainer } from '@testcontainers/mysql';
 import type { StartedMySqlContainer } from '@testcontainers/mysql';
@@ -64,23 +67,33 @@ export default async function globalSetup() {
     .withRootPassword('fvdms-e2e-root-password')
     .start();
   let server: ChildProcess | undefined;
-  let worker: ChildProcess | undefined;
+  let auditWorker: ChildProcess | undefined;
+  let reportingWorker: ChildProcess | undefined;
+  const reportStorageRoot = await mkdtemp(join(tmpdir(), 'fvdms-e2e-exports-'));
 
   try {
     await prepareDatabase(container);
-    worker = startWorker(container);
-    server = startServer(container);
+    auditWorker = startAuditWorker(container, reportStorageRoot);
+    reportingWorker = startReportingWorker(container, reportStorageRoot);
+    server = startServer(container, reportStorageRoot);
     await waitForHealth(server);
   } catch (error) {
     server?.kill('SIGTERM');
-    worker?.kill('SIGTERM');
+    auditWorker?.kill('SIGTERM');
+    reportingWorker?.kill('SIGTERM');
     await container.stop();
+    await rm(reportStorageRoot, { recursive: true, force: true });
     throw error;
   }
 
   return async () => {
-    await Promise.all([stopProcess(server!), stopProcess(worker!)]);
+    await Promise.all([
+      stopProcess(server!),
+      stopProcess(auditWorker!),
+      stopProcess(reportingWorker!),
+    ]);
     await container.stop();
+    await rm(reportStorageRoot, { recursive: true, force: true });
   };
 }
 
@@ -517,8 +530,8 @@ async function seedAuditEvidence(
   }).execute();
 }
 
-function startServer(container: StartedMySqlContainer): ChildProcess {
-  const environment = runtimeEnvironment(container);
+function startServer(container: StartedMySqlContainer, reportStorageRoot: string): ChildProcess {
+  const environment = runtimeEnvironment(container, reportStorageRoot);
   const child = spawn(
     process.execPath,
     ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3100'],
@@ -527,15 +540,32 @@ function startServer(container: StartedMySqlContainer): ChildProcess {
   return child;
 }
 
-function startWorker(container: StartedMySqlContainer): ChildProcess {
+function startAuditWorker(
+  container: StartedMySqlContainer,
+  reportStorageRoot: string,
+): ChildProcess {
   return spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/audit/worker.ts'], {
     cwd: process.cwd(),
-    env: runtimeEnvironment(container),
+    env: runtimeEnvironment(container, reportStorageRoot),
     stdio: 'ignore',
   });
 }
 
-function runtimeEnvironment(container: StartedMySqlContainer): NodeJS.ProcessEnv {
+function startReportingWorker(
+  container: StartedMySqlContainer,
+  reportStorageRoot: string,
+): ChildProcess {
+  return spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/reporting/worker.ts'], {
+    cwd: process.cwd(),
+    env: runtimeEnvironment(container, reportStorageRoot),
+    stdio: 'ignore',
+  });
+}
+
+function runtimeEnvironment(
+  container: StartedMySqlContainer,
+  reportStorageRoot: string,
+): NodeJS.ProcessEnv {
   return {
     ...process.env,
     NODE_ENV: 'test',
@@ -549,6 +579,9 @@ function runtimeEnvironment(container: StartedMySqlContainer): NodeJS.ProcessEnv
     DATABASE_POOL_MAX: '8',
     DATABASE_CONNECT_TIMEOUT_MS: '5000',
     DATABASE_QUERY_TIMEOUT_MS: '2000',
+    REPORT_EXPORT_STORAGE_ROOT: reportStorageRoot,
+    REPORT_EXPORT_POLL_INTERVAL_MS: '100',
+    REPORT_EXPORT_RETENTION_SECONDS: '604800',
     AUDIT_DATABASE_NAME: 'fvdms_audit',
     AUDIT_SINK_HOST: container.getHost(),
     AUDIT_SINK_PORT: String(container.getPort()),

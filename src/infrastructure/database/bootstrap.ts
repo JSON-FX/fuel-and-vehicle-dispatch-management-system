@@ -12,6 +12,7 @@ export function createBootstrapStatements(environment: BootstrapEnvironment): re
   const sinkAuditSchema = escapeId(environment.audit.sinkSchema);
   const applicationAccount = account(environment.application.user);
   const migrationAccount = account(environment.migration.user);
+  const reportingAccount = account(environment.reporting.user);
   const workerAccount = account(environment.audit.worker.user);
   const sinkWriterAccount = account(environment.audit.sinkWriter.user);
   const verifierAccount = account(environment.audit.verifier.user);
@@ -19,6 +20,7 @@ export function createBootstrapStatements(environment: BootstrapEnvironment): re
   const identities = [
     [applicationAccount, environment.application.password],
     [migrationAccount, environment.migration.password],
+    [reportingAccount, environment.reporting.password],
     [workerAccount, environment.audit.worker.password],
     [sinkWriterAccount, environment.audit.sinkWriter.password],
     [verifierAccount, environment.audit.verifier.password],
@@ -41,6 +43,31 @@ export function createBootstrapStatements(environment: BootstrapEnvironment): re
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ${sinkAuditSchema}.* TO ${migrationAccount}`,
     `GRANT CREATE, ALTER, DROP, INDEX, REFERENCES ON ${sinkAuditSchema}.* TO ${migrationAccount}`,
   ];
+}
+
+const reportingSourceTables = [
+  'offices',
+  'drivers',
+  'vehicles',
+  'budget_allocations',
+  'fuel_issuances',
+  'vehicle_dispatches',
+] as const;
+
+export function createReportingRuntimeGrantStatements(
+  environment: BootstrapEnvironment,
+): readonly string[] {
+  const reportingAccount = account(environment.reporting.user);
+  return reportingSourceTables.map(
+    (sourceTable) =>
+      `GRANT SELECT ON ${table(environment.database.name, sourceTable)} TO ${reportingAccount}`,
+  );
+}
+
+export function requiredReportingTables(environment: BootstrapEnvironment): ReadonlySet<string> {
+  return new Set(
+    reportingSourceTables.map((sourceTable) => `${environment.database.name}.${sourceTable}`),
+  );
 }
 
 function table(schema: string, name: string): string {
