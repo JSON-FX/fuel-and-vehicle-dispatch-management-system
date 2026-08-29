@@ -31,6 +31,7 @@
     "db:bootstrap": "./scripts/database/run.sh bootstrap",
     "db:migrate": "./scripts/database/run.sh migrate",
     "db:rollback": "./scripts/database/run.sh rollback",
+    "db:seed-demo": "./scripts/database/run.sh seed-demo",
     "db:status": "./scripts/database/run.sh status",
     "dev:up": "./scripts/dev/up.sh",
     "dev:down": "./scripts/dev/down.sh",
